@@ -85,6 +85,17 @@ try {
     assert.equal((await request("/", "POST")).status, 405);
     assert.equal(await (await request("/", "HEAD")).text(), "");
     const data = JSON.parse(bootstrap[1]!);
+    if (data.dashboard) {
+      assert.equal(
+        data.dashboard.blocks, undefined, "SSR must not include query results",
+      );
+      assert.equal(data.dashboard.generatedAt, undefined);
+      assert.ok(html.includes("Loading dashboard…"));
+      assert.equal(
+        (html.match(/class="block-loading"/g) || []).length,
+        data.dashboard.definition.blocks.length,
+      );
+    }
     assert.ok(html.includes(`data-theme="${data.catalog.theme.name}"`));
     for (const target of ["inputs", "buttons", "panels"] as const)
       assert.ok(
@@ -110,9 +121,13 @@ try {
     assert.equal(data.dashboard.params.country, "Canada");
     assert.equal(data.dashboard.params.channel, "Online");
     assert.equal(Object.keys(data.catalog.dashboards).length, 5);
-    assert.ok(
-      !data.dashboard.blocks.some((b: { type: string }) => b.type === "error"),
-    );
+    assert.equal(data.dashboard.labels.revenue, "Revenue");
+    const dashboard = await (
+      await request("/api/dashboards/overview?country=Canada&channel=Online")
+    ).json();
+    assert.ok(!dashboard.blocks.some((b: { type: string }) => b.type === "error"));
+    assert.equal(dashboard.params.country, "Canada");
+    assert.equal(dashboard.params.channel, "Online");
     const summary = await (await request("/api/queries/summary")).json();
     assert.equal(Number(summary.rows[0].revenue), 55755479.59);
     assert.equal(Number(summary.rows[0].orders), 26326);
@@ -138,7 +153,11 @@ try {
   });
   await withServer("source-examples", async (request) => {
     const data = await checkPage(request, "/dashboards/overview?region=North");
-    assert.equal(Number(data.dashboard.blocks[0].value), 3160);
+    assert.equal(data.dashboard.params.region, "North");
+    const overview = await (
+      await request("/api/dashboards/overview?region=North")
+    ).json();
+    assert.equal(Number(overview.blocks[0].value), 3160);
     const sources: DashboardResult = await (
       await request("/api/dashboards/sources")
     ).json();

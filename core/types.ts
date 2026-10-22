@@ -146,6 +146,13 @@ export interface DashboardResult {
   blocks: BlockResult[];
   generatedAt: string;
 }
+/** Initial page metadata, without executing queries or reading sources. */
+export interface DashboardShell {
+  id: string;
+  definition: DashboardDefinition;
+  params: Params;
+  labels: Record<string, string>;
+}
 export interface Catalog {
   name: string;
   theme: import("./theme").ResolvedTheme;

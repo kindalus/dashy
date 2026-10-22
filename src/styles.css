@@ -320,10 +320,10 @@ main {
   transition: opacity 0.15s;
 }
 .dashboard-grid[aria-busy="true"] {
-  opacity: 0.55;
   pointer-events: none;
 }
 .block {
+  position: relative;
   grid-column: span var(--span);
   min-width: 0;
   background: var(--surface);
@@ -331,6 +331,42 @@ main {
   border-radius: var(--radius-panel);
   overflow: hidden;
   box-shadow: var(--panel-shadow);
+}
+.block-content.is-pending {
+  opacity: 0.25;
+}
+.data-block .block-placeholder {
+  min-height: 330px;
+}
+.block-loading,
+.chart-loading {
+  position: absolute;
+  inset: 48px 12px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.spinner {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spinner-turn 0.8s linear infinite;
+}
+@keyframes spinner-turn {
+  to { transform: rotate(360deg); }
+}
+.chart-frame {
+  position: relative;
+}
+.chart-loading {
+  inset: 0;
 }
 .metric-block {
   container-type: inline-size;

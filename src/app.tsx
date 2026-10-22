@@ -12,6 +12,7 @@ import type {
   DashboardBlock,
   Catalog,
   DashboardResult,
+  DashboardShell,
   DatasetDefinition,
   ParamDefinition,
   Params,
@@ -20,14 +21,15 @@ import type {
 import { Chart } from "./chart";
 import { formatValue } from "./format";
 import { Brand, DashboardNavigation } from "./navigation";
+import { Spinner } from "./spinner";
 
 export interface AppProps {
   catalog: Catalog;
-  dashboard: DashboardResult | null;
+  dashboard: DashboardShell | null;
 }
 export function App(props: AppProps) {
-  const [result, setResult] = createSignal(props.dashboard);
-  const [loading, setLoading] = createSignal(false);
+  const [result, setResult] = createSignal<DashboardResult | null>(null);
+  const [loading, setLoading] = createSignal(Boolean(props.dashboard));
   const [error, setError] = createSignal("");
   let activeRequest: AbortController | undefined;
   let lastQuery = new URLSearchParams();
@@ -35,9 +37,17 @@ export function App(props: AppProps) {
   const definition = () => props.dashboard?.definition;
   const locale = () => props.catalog.locale;
   const params = () => props.dashboard?.params || {};
+  const blocks = createMemo(
+    () => new Map(result()?.blocks.map((block) => [block.id, block])),
+  );
   // Keep this derivation in one scope on both sides of Solid 2 hydration.
   const updateStatus = createMemo(() => {
-    if (loading()) return "Updating dashboard…";
+    if (loading())
+      return result() ? "Updating dashboard…" : "Loading dashboard…";
+    if (error())
+      return result()
+        ? "Update failed. Showing previous data."
+        : "Dashboard data unavailable";
     const current = result();
     if (!current) return "No dashboards configured";
     return `Updated ${new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }).format(new Date(current.generatedAt))} UTC`;
@@ -65,7 +75,7 @@ export function App(props: AppProps) {
         `${location.pathname}${query.size ? `?${query}` : ""}`,
       );
     } catch (error) {
-      if (!request.signal.aborted)
+      if (!request.signal.aborted && request === activeRequest)
         setError(
           error instanceof Error ? error.message : "Unable to load dashboard",
         );
@@ -73,7 +83,10 @@ export function App(props: AppProps) {
       if (request === activeRequest) setLoading(false);
     }
   }
-  onSettled(() => () => activeRequest?.abort());
+  onSettled(() => {
+    if (props.dashboard) void load(new URLSearchParams(location.search));
+    return () => activeRequest?.abort();
+  });
   function submit(event: SubmitEvent) {
     event.preventDefault();
     const query = new URLSearchParams();
@@ -131,8 +144,9 @@ export function App(props: AppProps) {
             <div>
               <h1>{definition()?.label || "Your dashboards"}</h1>
               <p>
-                {definition()?.description ||
-                  "Add a dashboard to your project configuration to get started."}
+                {definition()
+                  ? definition()?.description
+                  : "Add a dashboard to your project configuration to get started."}
               </p>
             </div>
             <Show when={props.dashboard}>
@@ -141,7 +155,7 @@ export function App(props: AppProps) {
                 disabled={loading()}
                 onClick={() => void load(new URLSearchParams(location.search))}
               >
-                {loading() ? "Refreshing…" : "Refresh"}
+                {loading() ? "Loading…" : "Refresh"}
               </button>
             </Show>
           </div>
@@ -184,7 +198,9 @@ export function App(props: AppProps) {
           </Show>
           <Show when={error()}>
             <div class="error-banner" role="alert">
-              <strong>Could not update dashboard</strong>
+              <strong>
+                {result() ? "Could not update dashboard" : "Could not load dashboard"}
+              </strong>
               <span>{error()}</span>
               <button
                 class="button secondary"
@@ -197,16 +213,19 @@ export function App(props: AppProps) {
           <div class="update-status" role="status" aria-live="polite">
             {updateStatus()}
           </div>
+          <noscript>Enable JavaScript to load dashboard data.</noscript>
           <section
             class="dashboard-grid"
             aria-label="Dashboard results"
             aria-busy={loading() ? "true" : "false"}
           >
-            <For each={result()?.blocks || []} keyed={(block) => block.id}>
-              {(block) => (
+            <For each={definition()?.blocks || []} keyed={(block) => block.id}>
+              {(layout) => (
                 <DashboardCard
-                  block={block()}
-                  layout={definition()?.blocks.find((b) => b.id === block().id)}
+                  block={blocks().get(layout().id)}
+                  layout={layout()}
+                  label={props.dashboard!.labels[layout().id]!}
+                  loading={loading()}
                   locale={locale()}
                 />
               )}
@@ -218,56 +237,82 @@ export function App(props: AppProps) {
   );
 }
 function DashboardCard(props: {
-  block: BlockResult;
-  layout?: DashboardBlock;
+  block?: BlockResult;
+  layout: DashboardBlock;
+  label: string;
+  loading: boolean;
   locale: string;
 }) {
   const metric = () =>
-    props.block.type === "metric" ? props.block : undefined;
+    props.block?.type === "metric" ? props.block : undefined;
   const dataset = () =>
-    props.block.type === "dataset" ? props.block : undefined;
-  const error = () => (props.block.type === "error" ? props.block : undefined);
+    props.block?.type === "dataset" ? props.block : undefined;
+  const error = () => (props.block?.type === "error" ? props.block : undefined);
   return (
     <article
-      class={`block ${metric() ? "metric-block" : "data-block"}`}
-      style={{ "--span": String(props.layout?.width || (metric() ? 3 : 6)) }}
+      class={`block ${props.layout.type === "metric" ? "metric-block" : "data-block"}`}
+      style={{
+        "--span": String(props.layout.width || (props.layout.type === "metric" ? 3 : 6)),
+      }}
+      aria-label={props.label}
+      aria-busy={props.loading ? "true" : "false"}
     >
-      <Show when={error()}>
-        {(block) => (
-          <div class="block-error">
-            <h2>Block unavailable</h2>
-            <p>{block().message}</p>
-          </div>
-        )}
+      <Show when={!props.block}>
+        <div class="block-placeholder">
+          <h2>{props.label}</h2>
+          <Show when={!props.loading}>
+            <p class="empty-state">Data unavailable. Use Try again to reload.</p>
+          </Show>
+        </div>
       </Show>
-      <Show when={metric()}>
-        {(block) => (
-          <>
-            <h2>{block().definition.label}</h2>
-            <div class="metric-value">
-              {formatValue(
-                block().value,
-                block().definition.format,
-                props.locale,
-              )}
+      <div
+        class={`block-content${props.loading ? " is-pending" : ""}`}
+        inert={props.loading}
+        aria-hidden={props.loading ? "true" : undefined}
+      >
+        <Show when={error()}>
+          {(block) => (
+            <div class="block-error">
+              <h2>Block unavailable</h2>
+              <p>{block().message}</p>
             </div>
-            <Show when={block().definition.description}>
-              <p class="metric-description">{block().definition.description}</p>
-            </Show>
-          </>
-        )}
-      </Show>
-      <Show when={dataset()}>
-        {(block) => (
-          <Dataset
-            definition={block().definition}
-            result={block().result}
-            initialView={
-              props.layout?.type === "dataset" ? props.layout.view : undefined
-            }
-            locale={props.locale}
-          />
-        )}
+          )}
+        </Show>
+        <Show when={metric()}>
+          {(block) => (
+            <>
+              <h2>{block().definition.label}</h2>
+              <div class="metric-value">
+                {formatValue(
+                  block().value,
+                  block().definition.format,
+                  props.locale,
+                )}
+              </div>
+              <Show when={block().definition.description}>
+                <p class="metric-description">{block().definition.description}</p>
+              </Show>
+            </>
+          )}
+        </Show>
+        <Show when={dataset()}>
+          {(block) => (
+            <Dataset
+              definition={block().definition}
+              result={block().result}
+              initialView={
+                props.layout?.type === "dataset" ? props.layout.view : undefined
+              }
+              locale={props.locale}
+            />
+          )}
+        </Show>
+      </div>
+      <Show when={props.loading}>
+        <div class="block-loading">
+          <Spinner />
+          <span>{props.block ? "Updating…" : "Loading…"}</span>
+        </div>
       </Show>
     </article>
   );

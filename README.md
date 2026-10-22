@@ -2,6 +2,14 @@
 
 Dashy renders dashboards defined in TypeScript. The engine reads SQLite, CSV, JSON, Excel `.xlsx`, DuckDB and Parquet sources, executes registered SQL queries, and presents metrics, charts and tables. Project definitions live outside the engine.
 
+Pages initially contain the dashboard layout, labels and filters, without running
+data queries. After hydration, the browser loads all results in one dashboard API
+request. Each metric and panel shows a theme-colored spinner while waiting.
+Refreshes retain the previous data beneath a loading indicator; failed requests
+offer a retry. JavaScript is required to load the data. Authentication, dashboard
+permissions and URL parameters are checked before sending the initial page and
+again when requesting its data.
+
 The application uses **Nitro 3, Vite 8, Bun and Solid 2**. Solid and Nitro are pinned to prerelease versions; the Solid Vite plugin is the Solid 2 package `@solidjs/vite-plugin`.
 
 ## Run

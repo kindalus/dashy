@@ -1,5 +1,6 @@
 import { createEffect, createSignal, onSettled, Show } from "solid-js";
 import type { DatasetDefinition, QueryResult } from "../core/types";
+import { Spinner } from "./spinner";
 
 export function Chart(props: {
   definition: DatasetDefinition;
@@ -50,16 +51,25 @@ export function Chart(props: {
     },
   );
   return (
-    <>
+    <div
+      class="chart-frame"
+      aria-busy={!renderer() && !error() ? "true" : "false"}
+    >
       <div
         class="chart"
         ref={element}
         role="img"
         aria-label={`${props.definition.label}. Use Table for the underlying values.`}
       />
+      <Show when={!renderer() && !error()}>
+        <div class="chart-loading" role="status">
+          <Spinner />
+          <span>Loading chart…</span>
+        </div>
+      </Show>
       <Show when={error()}>
         <p role="alert">{error()}</p>
       </Show>
-    </>
+    </div>
   );
 }

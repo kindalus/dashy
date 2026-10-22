@@ -39,6 +39,22 @@ Browser verification completed on 2026-10-22 with Chrome against both Vite devel
 
 The browser checks are manual DevTools verification, not part of `bun test`. Repeat them when changing the renderer or upgrading Solid/Nitro. Both frameworks remain pinned to prerelease versions. The build reports a size advisory for the lazily loaded chart chunk (about 544 kB before gzip); the initial client entry is about 68 kB before gzip.
 
+## Deferred dashboard data
+
+The initial HTML now contains a `DashboardShell` with layout, authorized block
+labels and parsed filters. It contains no metric values or dataset rows. The
+browser fetches the existing dashboard API once after hydration; its response
+contract is unchanged. Each pending block shows a theme-colored spinner, and
+refreshes keep the previous content mounted beneath the loading indicator.
+
+Production verification used an API proxy with a five-second delay to confirm
+that all six Maven panels appear before the data, with only one initial API
+request. Initial and refresh failures stop the spinners and offer retry; refresh
+failures retain the previous results. Filtering preserves chart instance IDs.
+Desktop and 390 px screenshots, reduced-motion behavior and filtered URL reloads
+were checked without hydration errors. Shell tests assert zero query builds and
+source mounts and retain permission/default/parameter validation.
+
 ## Opt-in samples
 
 Dashy now starts with empty registries in `dashy.config.ts`. The old synthetic

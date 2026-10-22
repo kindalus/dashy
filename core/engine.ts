@@ -8,6 +8,7 @@ import type {
   BlockResult,
   Catalog,
   DashboardResult,
+  DashboardShell,
   Principal,
   ProjectDefinition,
   QueryResult,
@@ -130,11 +131,11 @@ export class DashyEngine {
         throw new Error(`Dataset ${name} has no column ${column.key}`);
     return result;
   }
-  async dashboard(
+  dashboardShell(
     name: string,
     raw: Record<string, unknown> = {},
     principal?: Principal,
-  ): Promise<DashboardResult> {
+  ): DashboardShell {
     const definition = this.project.dashboards[name];
     if (!definition || !Object.hasOwn(this.project.dashboards, name))
       throw new DashyError("Dashboard not found", 404);
@@ -145,6 +146,29 @@ export class DashyEngine {
       raw,
       definition.defaults,
     );
+    const labels = Object.fromEntries(
+      definition.blocks.map((block) => {
+        const item = block.type === "metric"
+          ? this.project.metrics[block.metric]!
+          : this.project.datasets[block.dataset]!;
+        const query = this.project.queries[item.query]!;
+        return [
+          block.id,
+          canRead(item.roles, principal) && canRead(query.roles, principal)
+            ? item.label
+            : "Block unavailable",
+        ];
+      }),
+    );
+    return { id: name, definition, params, labels };
+  }
+
+  async dashboard(
+    name: string,
+    raw: Record<string, unknown> = {},
+    principal?: Principal,
+  ): Promise<DashboardResult> {
+    const { definition, params } = this.dashboardShell(name, raw, principal);
     const session = new QuerySession(this.project, this.adapters);
     try {
       // Request-local memoization shares queries between blocks without leaking results between users.

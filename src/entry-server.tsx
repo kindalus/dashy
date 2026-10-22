@@ -48,7 +48,7 @@ export default {
       const raw = readParams(url.searchParams, engine.project.params);
       const props: AppProps = {
         catalog,
-        dashboard: id ? await engine.dashboard(id, raw, principal) : null,
+        dashboard: id ? engine.dashboardShell(id, raw, principal) : null,
       };
       const nonce = randomBytes(18).toString("base64");
       const appHTML = renderToString(() => <App {...props} />, { nonce });
