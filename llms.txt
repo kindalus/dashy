@@ -86,6 +86,7 @@ Usar `import { defineProject } from "dashy"` para uma definição completa. Numa
 - `theme`: tema e cantos dos controlos.
 - `params`, `sources`, `queries`, `metrics`, `datasets`, `dashboards`: registos obrigatórios, mesmo quando vazios (`{}`).
 - `pages`: registo opcional de páginas, também carregado de `extensions/index.ts`.
+- `api`: registo opcional de rotas de servidor, também carregado de `extensions/api/index.ts`.
 - `adapters`: adapters de fontes adicionais, executados no servidor.
 - `authenticate(request)`: integração opcional com a autenticação da aplicação.
 
@@ -291,9 +292,9 @@ Alguns números DuckDB são strings na API para preservar a representação exat
 
 ## Autenticação e permissões
 
-Os samples são públicos. Para uma solução privada, definir `authenticate(request)` no projeto e integrar a sessão ou o fornecedor de identidade da aplicação. Pode ser assíncrono; devolve `{ roles: [...] }` para um utilizador autenticado ou `null` para negar acesso. O hook protege páginas, catálogo e endpoints de dados.
+Os samples são públicos. Para uma solução privada, definir `authenticate(request)` no projeto e integrar a sessão ou o fornecedor de identidade da aplicação. Pode ser assíncrono; devolve `{ roles: [...] }` para um utilizador autenticado ou `null` para negar acesso. O hook protege páginas, catálogo, endpoints de dados e rotas API customizadas.
 
-Queries, métricas, datasets, dashboards e páginas aceitam `roles`. Uma lista não vazia exige pelo menos uma role correspondente. O acesso tem de ser permitido em cada nível utilizado. Sem roles, esse artefacto não acrescenta uma restrição. Proteger a query quando os próprios dados são privados: restringir apenas um dashboard não restringe o endpoint direto da query. Grupos de navegação não concedem permissões. As roles restringem artefactos, sem implementar isolamento automático por linha ou tenant.
+Queries, métricas, datasets, dashboards, páginas e rotas API customizadas aceitam `roles`. Uma lista não vazia exige pelo menos uma role correspondente. O acesso tem de ser permitido em cada nível utilizado. Sem roles, esse artefacto não acrescenta uma restrição. Proteger a query quando os próprios dados são privados: restringir apenas um dashboard não restringe o endpoint direto da query. Grupos de navegação não concedem permissões. As roles restringem artefactos, sem implementar isolamento automático por linha ou tenant.
 
 Configurações e builders são código de confiança executado no servidor. Autenticação e credenciais ficam nesse lado. Os pedidos HTTP apenas escolhem artefactos registados e valores de parâmetros; não existe um endpoint de SQL arbitrário.
 
@@ -457,7 +458,7 @@ registados em `pages` no `dashy.config.ts` do sample:
 - `/pages/market-explorer`: comparação por país do cliente, quota da receita,
   clientes, encomendas e valor médio. Filtra período, categoria e canal.
 
-Reutilizam os datasets `products` e `countries`, respetivamente. Cada página faz
+Reutilizam os datasets `products` e `countries`, respetivamente. Market explorer acede ao dataset através de `/api/custom/markets`. Cada página faz
 um pedido com os parâmetros e partilha o resultado pelos seus elementos. O helper
 local `shared.tsx` trata loading, cancelamento, erro/repetição e ausência de dados.
 Os filtros usam GET e os links preservam os parâmetros. O filtro de produto nas
@@ -468,3 +469,122 @@ Desenvolvimento: `bun run dev --with-sample maven-analytics`.
 Produção: `bun run dashy build --with-sample maven-analytics`, seguido de
 `bun run start --with-sample maven-analytics`. O build predefinido não compila estas
 páginas. Para validar o pacote Maven: `bun scripts/check-build.ts --maven`.
+
+## Rotas API customizadas
+
+Registar handlers de servidor em `extensions/api/index.ts`, com export por omissão
+criado por `defineApiRoutes` de `dashy`. Também é possível definir `api` diretamente
+na configuração. Os registos são combinados; identificadores repetidos ou rotas
+com o mesmo método e padrão são erros no arranque.
+
+`DASHY_EXTENSIONS_DIR` controla a localização, incluindo pastas externas. Uma pasta
+explicitamente configurada pode conter apenas `api/index.ts`, sem páginas. Os
+índices aceitam `.ts`, `.js` e `.mjs`, por esta ordem. As dependências dos handlers,
+incluindo `dashy`, têm de resolver a partir dessa pasta ou de um antepassado com
+`node_modules`, tal como em qualquer módulo Bun. Não há pesquisa recursiva de rotas.
+
+Exemplo completo de `extensions/api/index.ts`, para o dataset `customer_orders`
+do exemplo em `examples/external-application`:
+
+```ts
+import { defineApiRoutes } from "dashy";
+
+export default defineApiRoutes({
+  customerOrders: {
+    method: "GET",
+    path: "/customers/:id/orders",
+    params: [],
+    async handler({ data, pathParams }) {
+      return Response.json(await data.dataset("customer_orders", {
+        customer: pathParams.id,
+      }));
+    },
+  },
+});
+```
+
+A rota é `GET /api/custom/customers/2/orders`. `path` é relativo a `/api/custom`.
+Os métodos declarados são GET, POST, PUT, PATCH e DELETE. HEAD executa o handler
+GET e descarta/cancela o corpo da resposta. OPTIONS devolve 204 e `Allow`, com os
+métodos autorizados, sem executar handlers. Não ativa CORS. Um caminho inexistente
+devolve 404; um método não permitido devolve 405 com `Allow`.
+
+Os segmentos estáticos têm precedência sobre `:param`, da esquerda para a direita.
+Por exemplo, `/customers/new` prevalece sobre `/customers/:id`, mesmo que não aceite
+o método pedido. Não há fallback para a rota menos específica. Um parâmetro ocupa
+um segmento; não há wildcards nem regex. Os nomes são únicos por caminho. Uma barra
+final no pedido é tolerada; não a incluir na definição. Os parâmetros do caminho
+são strings descodificadas uma vez, sem separadores de caminho nem caracteres de
+controlo. A validação de domínio fica no handler ou no dataset/query chamado.
+
+O handler recebe `request`, `pathParams`, `query` como URLSearchParams, `params`,
+`principal`, `signal`, `readJson()` e `data`. Devolve uma Response, síncrona ou
+assíncrona, permitindo JSON, texto, ficheiros e streams. `data.dataset`,
+`data.metric` e `data.query` recebem nome e parâmetros e propagam automaticamente
+principal e cancelamento. Não expõem a instância do motor. Mantêm as permissões
+do artefacto e da query. Não há deduplicação automática entre chamadas destes métodos.
+
+`params: ["period", "category"]` declara parâmetros da query string definidos no
+registo global. Aplica tipos, defaults e validação existentes; rejeita parâmetros
+desconhecidos. Os valores explicitamente limpos são mantidos como null, para não
+reaplicar defaults quando encaminhados para `data.*`. `params: []` rejeita qualquer
+query string. Omitir `params` deixa `params` vazio e permite ler/validar `query`
+manualmente. Os parâmetros do caminho não se misturam automaticamente com estes.
+
+As rotas herdam `authenticate` da aplicação, chamado uma vez por pedido. `roles`
+é opcional e exige pelo menos uma correspondência quando não vazio. Sem hook de
+autenticação, rotas sem roles são anónimas. Os handlers são código de confiança da
+implementação; devem verificar propriedade dos recursos e isolamento por cliente
+quando necessário. As roles não implementam isolamento por linha.
+
+POST, PUT, PATCH e DELETE exigem `X-Dashy-Request: 1`, mesmo em clientes de linha de
+comandos. Se houver Origin, tem de coincidir com a origem do URL recebido pelo
+servidor. Sec-Fetch-Site, quando presente, só aceita same-origin ou none. Não há
+exceção de autenticação por rota nem acesso CORS automático nesta versão. O proxy
+inverso deve preservar a origem pública nos pedidos entregues ao servidor.
+
+O corpo inteiro é limitado antes de executar o handler, mesmo quando este usa
+`request.json()` ou `request.text()` diretamente. Por omissão, o limite é 1 MiB;
+`maxBodyBytes` permite configurá-lo por rota. O limite conta bytes reais, incluindo
+pedidos sem Content-Length. Corpos acima do limite devolvem 413. `readJson()`
+exige application/json ou um tipo application/*+json, devolve unknown e rejeita
+JSON inválido com 400 ou tipos incompatíveis com 415. Validar os campos depois da
+leitura. Para erros esperados, lançar `new DashyError("mensagem", 422)` importado de
+`dashy`. Erros inesperados devolvem 500 genérico e ficam nos logs do servidor.
+As respostas mantêm os cabeçalhos específicos do handler, mas recebem os cabeçalhos
+de segurança do Dashy e Cache-Control: no-store.
+
+Exemplo de chamada ao sample Maven:
+
+```sh
+curl http://localhost:3000/api/custom/calculate-margin \
+  -H 'Content-Type: application/json' \
+  -H 'X-Dashy-Request: 1' \
+  -d '{"revenue":100,"cost":60}'
+# {"profit":40,"margin":0.4}
+```
+
+Maven fornece ainda GET `/api/custom/markets` e
+`/api/custom/markets/:country/orders`, com filtros period, category e channel.
+A página Market explorer consome a primeira rota. A página Customer 360 do exemplo
+externo consome `/api/custom/customers/:id/orders`. Ambas conservam loading,
+cancelamento e tratamento de erros. O POST Maven é um cálculo sem persistência;
+a escrita em sistemas externos fica a cargo da implementação, não do motor SQL.
+
+O build inclui os handlers e os seus imports no pacote da implementação e nos
+samples. Não entram no catálogo, bootstrap HTML nem assets do browser. O Vite
+bloqueia imports de módulos da implementação usados pelo servidor e acesso direto
+a esses ficheiros, incluindo caminhos /@fs, imports ?raw/?url e symlinks. Manter
+helpers privados dentro de `extensions/api/` e usar imports literais. Os módulos
+partilhados com o browser devem ficar separados dos imports de servidor; tipos
+podem ser importados com `import type` de `dashy/types`.
+
+Reiniciar depois de alterar registos, handlers ou imports de servidor em
+desenvolvimento ou numa implementação externa carregada em runtime. Para distribuir
+alterações ao pacote `.output`, reconstruir e reiniciar. Acrescentar uma rota API
+externa não exige recompilar componentes Solid. `check:extensions` verifica rotas
+externas, permissões de datasets e o pacote após remover a implementação original;
+`bun scripts/check-build.ts --maven` verifica também as rotas do sample.
+
+A proteção de módulos usa os hooks de [plugins Vite](https://vite.dev/guide/api-plugin)
+e os imports identificados pelo [metafile de Bun.build](https://bun.sh/docs/bundler#metafile).

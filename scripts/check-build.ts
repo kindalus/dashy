@@ -15,7 +15,7 @@ try {
   async function withServer(
     sample: string | undefined,
     verify: (
-      request: (path: string, method?: string, signal?: AbortSignal) => Promise<Response>,
+      request: (path: string, method?: string, signal?: AbortSignal, body?: unknown) => Promise<Response>,
     ) => Promise<void>,
     theme?: string,
     locale?: string,
@@ -42,8 +42,10 @@ try {
     );
     const out = new Response(child.stdout).text();
     const err = new Response(child.stderr).text();
-    const request = (path: string, method = "GET", signal?: AbortSignal) =>
-      fetch(`http://127.0.0.1:${port}${path}`, { method, signal });
+    const request = (path: string, method = "GET", signal?: AbortSignal, body?: unknown) =>
+      fetch(`http://127.0.0.1:${port}${path}`, { method, signal, ...(body === undefined ? {} : {
+        body: JSON.stringify(body), headers: { "Content-Type": "application/json", "X-Dashy-Request": "1" },
+      }) });
     try {
       const deadline = Date.now() + 20000;
       while (true) {
@@ -140,6 +142,18 @@ try {
       const empty = await (await request(`/api/datasets/${dataset}?period.from=2030-01-01&period.until=2030-12-31`)).json();
       assert.equal(empty.rows.length, 0);
     }
+    const markets = await (await request("/api/custom/markets?category=Computers&channel=Online")).json();
+    assert.ok(markets.rows.length > 0);
+    const marketOrders = await (await request("/api/custom/markets/Canada/orders?category=Computers&channel=Online")).json();
+    assert.ok(marketOrders.rows.length > 0);
+    assert.ok(marketOrders.rows.every((row: { country: string }) => row.country === "Canada"));
+    assert.equal((await request("/api/custom/markets/invalid/orders")).status, 400);
+    assert.equal((await request("/api/custom/calculate-margin", "POST")).status, 403);
+    assert.equal((await request("/api/custom/calculate-margin", "OPTIONS")).status, 204);
+    const calculation = await request("/api/custom/calculate-margin", "POST", undefined, { revenue: 100, cost: 60 });
+    assert.equal(calculation.status, 200);
+    assert.deepEqual(await calculation.json(), { profit: 40, margin: 0.4 });
+    assert.equal((await request("/api/custom/calculate-margin", "POST", undefined, { revenue: -1, cost: 60 })).status, 422);
     assert.equal(data.dashboard.params.country, "Canada");
     assert.equal(data.catalog.locale, "pt");
     assert.equal(data.dashboard.params.channel, "Online");
@@ -230,6 +244,7 @@ try {
       join(directory, "samples/runtime-added/dashy.config.js"),
       `export default {
         name: 'Cancellation check', params: {}, datasets: {}, metrics: {}, dashboards: {},
+        api: { slow: { method: 'GET', path: '/slow', handler: async ({ data }) => Response.json(await data.query('slow')) } },
         sources: { slow: { type: 'slow', path: '' } },
         queries: { slow: { label: 'Slow', sources: ['slow'],
           build: () => ({ text: 'SELECT 42 AS value', values: [] }) } },
@@ -252,16 +267,19 @@ try {
         }
         assert.fail(`Expected cancellation marker: ${expected}`);
       };
-      const controller = new AbortController();
-      const pending = request("/api/queries/slow", "GET", controller.signal).catch((error) => error);
-      try {
-        await waitForMarker("started");
-        controller.abort();
-        assert.equal((await pending).name, "AbortError");
-        await waitForMarker("cancelled");
-      } finally {
-        controller.abort();
-        await pending;
+      for (const path of ["/api/queries/slow", "/api/custom/slow"]) {
+        await writeFile(cancellationMarker, "");
+        const controller = new AbortController();
+        const pending = request(path, "GET", controller.signal).catch((error) => error);
+        try {
+          await waitForMarker("started");
+          controller.abort();
+          assert.equal((await pending).name, "AbortError");
+          await waitForMarker("cancelled");
+        } finally {
+          controller.abort();
+          await pending;
+        }
       }
     });
     // Locale selection must reach both the API and the hydration data.

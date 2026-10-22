@@ -1,6 +1,6 @@
 import { createSignal, For, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
-import { fetchDataset, paramsSearch, Spinner, type PageProps, type Params, type QueryResult } from "dashy/ui";
+import { paramsSearch, Spinner, type PageProps, type Params, type QueryResult } from "dashy/ui";
 import "./pages.css";
 
 /** Explicit clears must survive a second parameter parse at the dataset endpoint. */
@@ -9,7 +9,7 @@ export function pageParams(props: PageProps): Params {
 }
 
 /** One request per page; every view on that page shares the same result. */
-export function useDataset(name: string, params: Params) {
+export function usePageData(fetchResult: (signal: AbortSignal) => Promise<QueryResult>) {
   const [result, setResult] = createSignal<QueryResult>();
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal("");
@@ -20,7 +20,7 @@ export function useDataset(name: string, params: Params) {
     setLoading(true);
     setError("");
     try {
-      const data = await fetchDataset(name, params, current.signal);
+      const data = await fetchResult(current.signal);
       if (!current.signal.aborted) setResult(data);
     } catch (failure) {
       if (!current.signal.aborted) setError(failure instanceof Error ? failure.message : "Unable to load data");
@@ -32,7 +32,7 @@ export function useDataset(name: string, params: Params) {
   return { result, loading, error, load };
 }
 
-export function Results(props: { data: ReturnType<typeof useDataset>; children: JSX.Element }) {
+export function Results(props: { data: ReturnType<typeof usePageData>; children: JSX.Element }) {
   return <section aria-busy={props.data.loading() ? "true" : "false"}>
     <Show when={props.data.loading()}><div class="block block-loading" role="status"><Spinner /> Loading data…</div></Show>
     <Show when={props.data.error()}><div class="block maven-notice" role="alert">

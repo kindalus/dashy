@@ -191,7 +191,8 @@ Project files and SQL builders are trusted server code. HTTP parameters are untr
 
 ## API
 
-All endpoints are `GET` and share the project's authentication hook:
+Built-in data endpoints are `GET` and share the project's authentication hook.
+Custom routes under `/api/custom/` can declare additional methods:
 
 ```text
 /api/catalog
@@ -217,3 +218,22 @@ results between users or reusing stale results after filters change.
 - [Solid 2 migration guide](https://github.com/solidjs/solid/blob/next/documentation/solid-2.0/MIGRATION.md).
 - [Solid 2 Vite plugin](https://github.com/solidjs/solid-vite-plugin/tree/next).
 - [Bun SQLite](https://bun.sh/docs/runtime/sqlite), [DuckDB Node API](https://duckdb.org/docs/stable/clients/node_neo/overview), [ExcelJS](https://github.com/exceljs/exceljs#reading-xlsx).
+
+## Custom API routes
+
+Register server handlers in `extensions/api/index.ts` using `defineApiRoutes` from
+`dashy`, or in the config's `api` registry. The directory follows
+`DASHY_EXTENSIONS_DIR` and may contain API routes without any custom pages.
+Routes run under `/api/custom/`, inherit application authentication, support roles
+and receive dataset/query/metric helpers bound to the requesting principal.
+
+GET, POST, PUT, PATCH and DELETE handlers return standard `Response` objects.
+HEAD and OPTIONS are automatic. Write requests require `X-Dashy-Request: 1` and
+same-origin browser requests. Request bodies default to a 1 MiB limit.
+Server handlers are excluded from client assets and protected against direct Vite
+file access. Restart after changing external handlers; rebuild distributed packages.
+
+Maven includes `/api/custom/markets`, `/api/custom/markets/:country/orders` and
+POST `/api/custom/calculate-margin`. Market explorer uses the markets endpoint.
+The external Customer 360 example uses `/api/custom/customers/:id/orders`.
+See [llms.txt](llms.txt) for definitions, validation, security and deployment details.

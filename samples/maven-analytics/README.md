@@ -26,7 +26,8 @@ The **Custom pages** navigation group contains two Solid pages:
   share, customers, orders and average order value. Filters cover period, category
   and channel. Each country links to its order lines.
 
-Both use the same `products` and `countries` datasets as the dashboards. Each page
+Both use the same `products` and `countries` datasets as the dashboards. Market
+explorer fetches its data through the custom `/api/custom/markets` endpoint. Each page
 makes one request with all its parameters after hydration and shares that result
 between its views. Loading, error/retry and empty states are included. Filter
 state lives in the URL; dashboard links preserve it. Order links use the existing
@@ -42,6 +43,21 @@ A default build has no compiled custom pages. Rebuild with the command above
 before starting this sample in production. To verify the packaged sample, run
 `bun scripts/check-build.ts --maven` after its build. `bun run check:build` verifies
 the default build instead.
+
+## Custom API routes
+
+`extensions/api/index.ts` defines three server routes:
+
+- GET `/api/custom/markets`: country dataset with period/category/channel filters.
+- GET `/api/custom/markets/:country/orders`: filtered order lines for one country.
+- POST `/api/custom/calculate-margin`: JSON `{ "revenue": 100, "cost": 60 }`
+  returns `{ "profit": 40, "margin": 0.4 }`. Requires Content-Type application/json
+  and `X-Dashy-Request: 1`. Invalid fields return 422; bodies over 4 KiB return 413.
+
+The calculation does not modify the CSVs or persist data. The query routes retain
+all dataset validation and permissions. Handlers and their imports remain on the
+server. Restart development after edits; rebuild the production package to deploy
+handler changes. HEAD and OPTIONS are provided automatically.
 
 ## Data provenance
 

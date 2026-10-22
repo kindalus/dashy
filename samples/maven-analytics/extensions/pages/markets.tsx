@@ -1,10 +1,15 @@
 import { For } from "solid-js";
-import { formatValue, type PageProps } from "dashy/ui";
-import { dashboardLink, pageParams, PageFilters, Results, useDataset } from "./shared";
+import { formatValue, paramsSearch, type PageProps } from "dashy/ui";
+import { dashboardLink, pageParams, PageFilters, Results, usePageData } from "./shared";
 
 export default function MarketExplorer(props: PageProps) {
   const params = pageParams(props);
-  const data = useDataset("countries", params);
+  const data = usePageData(async signal => {
+    const response = await fetch(`/api/custom/markets?${paramsSearch(params)}`, { signal, credentials: "same-origin" });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || "Unable to load markets");
+    return body;
+  });
   const totalRevenue = () => (data.result()?.rows ?? []).reduce((sum, row) => sum + Number(row.revenue), 0);
   const share = (revenue: number) => totalRevenue() ? revenue / totalRevenue() : 0;
   const money = (value: number) => formatValue(value, { style: "currency", currency: "USD", decimals: 0 }, props.locale);

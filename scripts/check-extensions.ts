@@ -40,6 +40,8 @@ async function withServer(extra: Record<string, string>, check: (request: (path:
 
 try {
   await cp(join(installation, "examples/external-application"), implementation, { recursive: true });
+  await mkdir(join(directory, "node_modules"));
+  await symlink(installation, join(directory, "node_modules/dashy"));
   await mkdir(join(implementation, "node_modules"));
   await symlink(installation, join(implementation, "node_modules/dashy"));
   const configPath = join(implementation, "dashy.config.ts");
@@ -55,6 +57,8 @@ try {
   await writeFile(pagesPath, (await readFile(pagesPath, "utf8")).replace('} satisfies', '  private_customer: { label: "Private customer", roles: ["admin"], component: "pages/customer.tsx", params: ["customer"] },\n} satisfies'));
   const artifactsPath = join(implementation, "artifacts/index.ts");
   await writeFile(artifactsPath, (await readFile(artifactsPath, "utf8")).replace('label: "Customer orders",', 'label: "Customer orders", roles: ["admin"],'));
+  const apiPath = join(implementation, "extensions/api/index.ts");
+  await writeFile(apiPath, (await readFile(apiPath, "utf8")).replace('      // Dataset', '      const privateMarker = "dashy-private-api-marker";\n      if (!privateMarker) throw new Error();\n      // Dataset'));
   await rename(join(implementation, "artifacts"), join(directory, "artifacts"));
   await rename(join(implementation, "extensions"), join(directory, "extensions"));
   const before = await readFile(configPath, "utf8");
@@ -66,16 +70,33 @@ try {
       originals.set(file, await readFile(file, "utf8"));
     }
   }
+  // An accidental runtime import from a page must fail before private code reaches client assets.
+  const componentPath = join(directory, "extensions/pages/customer.tsx");
+  const component = await readFile(componentPath, "utf8");
+  await writeFile(componentPath, 'import routes from "../api/index"; console.log(routes);\n' + component);
+  try {
+    const unsafe = Bun.spawn([process.execPath, join(installation, "bin/dashy.ts"), "build"], {
+      cwd: directory, env: { ...env, ...externalPaths }, stdout: "pipe", stderr: "pipe",
+    });
+    const [code, out, err] = await Promise.all([unsafe.exited, new Response(unsafe.stdout).text(), new Response(unsafe.stderr).text()]);
+    assert.notEqual(code, 0, "A page imported a server handler into the browser");
+    assert.match(out + err, /Cannot import server-only/);
+  } finally { await writeFile(componentPath, component); }
   await run([join(installation, "bin/dashy.ts"), "build"], externalPaths);
   for (const [file, contents] of originals) assert.equal(await readFile(file, "utf8"), contents, `Build changed ${file}`);
   assert.equal(await readFile(configPath, "utf8"), before, "Build modified implementation configuration");
   await cp(join(installation, ".output"), deployment, { recursive: true });
   for await (const path of new Bun.Glob("**/*.js").scan(join(deployment, "public")))
-    assert(!(await readFile(join(deployment, "public", path), "utf8")).includes("dashy-private-config-marker"), `Server config leaked into ${path}`);
+    assert(!/dashy-private-(config|api)-marker/.test(await readFile(join(deployment, "public", path), "utf8")), `Server code leaked into ${path}`);
 
   const check = async (request: (path: string, role?: string, method?: string) => Promise<Response>) => {
     assert.equal((await request("/pages/customer")).status, 401);
     assert.equal((await request("/api/catalog")).status, 401);
+    assert.equal((await request("/api/custom/customers/2/orders")).status, 401);
+    assert.equal((await request("/api/custom/customers/2/orders", "viewer")).status, 403);
+    assert.equal((await request("/api/custom/customers/0/orders", "admin")).status, 400);
+    const orders = await (await request("/api/custom/customers/2/orders", "admin")).json();
+    assert.deepEqual(orders.rows, [{ product: "Monitor", amount: 210 }]);
     assert.equal((await request("/pages/private_customer", "viewer")).status, 403);
     assert.equal((await request("/pages/private_customer", "admin")).status, 200);
     assert.equal((await request("/pages/customer?customer=0", "admin")).status, 400);

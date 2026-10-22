@@ -1,10 +1,10 @@
 import { For } from "solid-js";
-import { formatValue, type PageProps, type Scalar } from "dashy/ui";
-import { dashboardLink, pageParams, PageFilters, Results, useDataset } from "./shared";
+import { fetchDataset, formatValue, type PageProps, type Scalar } from "dashy/ui";
+import { dashboardLink, pageParams, PageFilters, Results, usePageData } from "./shared";
 
 export default function ProductExplorer(props: PageProps) {
   const params = pageParams(props);
-  const data = useDataset("products", params);
+  const data = usePageData(signal => fetchDataset("products", params, signal));
   const money = (value: Scalar | undefined) => formatValue(value, { style: "currency", currency: "USD", decimals: 0 }, props.locale);
   return <div class="maven-page">
     <PageFilters {...props} />

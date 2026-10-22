@@ -1,5 +1,5 @@
 import { createSignal, For, onSettled, Show } from "solid-js";
-import { fetchDataset, formatValue, Spinner, type PageProps, type QueryResult } from "dashy/ui";
+import { formatValue, Spinner, type PageProps, type QueryResult } from "dashy/ui";
 import "./customer.css";
 
 export default function Customer(props: PageProps) {
@@ -13,7 +13,9 @@ export default function Customer(props: PageProps) {
     setLoading(true);
     setError("");
     try {
-      const data = await fetchDataset("customer_orders", { customer: props.params.customer ?? null }, current.signal);
+      const response = await fetch(`/api/custom/customers/${encodeURIComponent(String(props.params.customer))}/orders`, { signal: current.signal, credentials: "same-origin" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to load orders");
       if (!current.signal.aborted) setResult(data);
     } catch (failure) {
       if (!current.signal.aborted) setError(failure instanceof Error ? failure.message : "Unable to load orders");
