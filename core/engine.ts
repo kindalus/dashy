@@ -64,8 +64,9 @@ export class DashyEngine {
     name: string,
     raw: Record<string, unknown> = {},
     principal?: Principal,
+    signal?: AbortSignal,
   ): Promise<QueryResult> {
-    const session = new QuerySession(this.project, this.adapters);
+    const session = new QuerySession(this.project, this.adapters, signal);
     try {
       return await this.executeQuery(session, name, raw, principal);
     } finally {
@@ -108,12 +109,13 @@ export class DashyEngine {
     raw: Record<string, unknown> = {},
     principal?: Principal,
     execute = this.query.bind(this),
+    signal?: AbortSignal,
   ): Promise<Scalar> {
     const definition = this.project.metrics[name];
     if (!definition || !Object.hasOwn(this.project.metrics, name))
       throw new DashyError("Metric not found", 404);
     requireRead(definition.roles, principal);
-    const result = await execute(definition.query, raw, principal);
+    const result = await execute(definition.query, raw, principal, signal);
     if (!result.columns.includes(definition.column))
       throw new Error(`Metric ${name} has no column ${definition.column}`);
     if (result.rows.length > 1 || result.truncated)
@@ -125,12 +127,13 @@ export class DashyEngine {
     raw: Record<string, unknown> = {},
     principal?: Principal,
     execute = this.query.bind(this),
+    signal?: AbortSignal,
   ): Promise<QueryResult> {
     const definition = this.project.datasets[name];
     if (!definition || !Object.hasOwn(this.project.datasets, name))
       throw new DashyError("Dataset not found", 404);
     requireRead(definition.roles, principal);
-    const result = await execute(definition.query, raw, principal);
+    const result = await execute(definition.query, raw, principal, signal);
     for (const column of definition.columns)
       if (!result.columns.includes(column.key))
         throw new Error(`Dataset ${name} has no column ${column.key}`);
@@ -183,6 +186,7 @@ export class DashyEngine {
     requestId: string,
     raw: Record<string, unknown> = {},
     principal?: Principal,
+    signal?: AbortSignal,
   ): Promise<DashboardData> {
     const { definition, params, requests } = this.dashboardShell(
       name, raw, principal,
@@ -195,6 +199,7 @@ export class DashyEngine {
       params,
       definition.blocks.filter((block) => selected.has(block.id)),
       principal,
+      signal,
     );
   }
 
@@ -202,11 +207,12 @@ export class DashyEngine {
     name: string,
     raw: Record<string, unknown> = {},
     principal?: Principal,
+    signal?: AbortSignal,
   ): Promise<DashboardResult> {
     const { definition, params } = this.dashboardShell(name, raw, principal);
     return {
       id: name, definition, params,
-      ...await this.loadBlocks(definition, params, definition.blocks, principal),
+      ...await this.loadBlocks(definition, params, definition.blocks, principal, signal),
     };
   }
 
@@ -215,8 +221,9 @@ export class DashyEngine {
     params: Params,
     selected: readonly DashboardBlock[],
     principal?: Principal,
+    signal?: AbortSignal,
   ): Promise<DashboardData> {
-    const session = new QuerySession(this.project, this.adapters);
+    const session = new QuerySession(this.project, this.adapters, signal);
     try {
       // Request-local memoization shares queries between blocks without leaking results between users.
       const results = new Map<string, Promise<QueryResult>>();
@@ -258,6 +265,7 @@ export class DashyEngine {
               result: await this.dataset(block.dataset, {}, principal, execute),
             });
         } catch (error) {
+          if (signal?.aborted) throw new DashyError("Request cancelled", 499);
           if (!(error instanceof DashyError))
             console.error(`[dashy] Block ${block.id} failed`, error);
           blocks.push({

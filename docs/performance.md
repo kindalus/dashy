@@ -169,3 +169,26 @@ numeric integers, timestamps, nulls and mixed values, and verify that failed
 conversions reject while leaving the connection usable.
 
 Reference: [DuckDB Node API appender documentation](https://github.com/duckdb/duckdb-node-neo/blob/main/api/pkgs/%40duckdb/node-api/README.md#append-to-table).
+
+### Request cancellation owns database work
+
+Previously, changing filters aborted browser fetches but the server continued
+mounting sources and running their queries. HTTP handlers now pass the request
+signal through the engine to `QuerySession`. The session owns the deadline,
+native interruption, cancellation checkpoints and listener cleanup. Adapters
+receive the combined cancellation/deadline signal; existing adapters remain
+compatible because the signal is optional. A cancelled request returns 499 if
+a response can still be delivered, without logging the private abort reason.
+
+Tests prove that pre-cancelled requests through all five data endpoint types
+mount zero sources. Cancellation during a delayed adapter starts zero SQL
+queries and zero later mounts. A running 10-billion-row range aggregate is
+interrupted after the scheduled 50 ms while a separate session returns 42.
+Completed sessions remove their abort listeners before closing. These are
+avoided-work checks, not claims of lower normal-request latency.
+
+The isolated packaged-deployment check also aborts a real HTTP fetch after its
+adapter starts and verifies that the adapter receives cancellation. This tests
+the Bun/Nitro transport as well as the engine. An uncooperative adapter cannot
+be forcibly stopped, but no later query starts after it returns. Excel parsing
+has the same limitation; row import checks the signal between chunks.

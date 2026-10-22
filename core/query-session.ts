@@ -1,6 +1,7 @@
-import { DuckDBInstance } from "@duckdb/node-api";
+import { DuckDBInstance, type DuckDBConnection } from "@duckdb/node-api";
 import { resolve } from "node:path";
 import { mountSource, type SourceAdapter } from "./sources";
+import { DashyError } from "./params";
 import type {
   ProjectDefinition,
   QueryResult,
@@ -17,6 +18,7 @@ export class QuerySession {
   constructor(
     private project: ProjectDefinition,
     private adapters: Record<string, SourceAdapter>,
+    private signal?: AbortSignal,
   ) {}
 
   private async open() {
@@ -40,9 +42,24 @@ export class QuerySession {
     limit: number,
   ): Promise<QueryResult> {
     const start = performance.now();
-    const { connection } = await (this.database ??= this.open());
-    const timer = setTimeout(() => connection.interrupt(), 30_000);
+    const deadline = new AbortController();
+    const signal = this.signal
+      ? AbortSignal.any([this.signal, deadline.signal])
+      : deadline.signal;
+    const check = () => {
+      if (this.signal?.aborted) throw new DashyError("Request cancelled", 499);
+      deadline.signal.throwIfAborted();
+    };
+    let connection: DuckDBConnection | undefined;
+    const interrupt = () => connection?.interrupt();
+    signal.addEventListener("abort", interrupt, { once: true });
+    const timer = setTimeout(() => deadline.abort(
+      new DashyError("Query timed out", 504),
+    ), 30_000);
     try {
+      check();
+      connection = (await (this.database ??= this.open())).connection;
+      check();
       for (const name of sources) {
         if (!this.mounted.has(name))
           this.mounted.set(
@@ -53,9 +70,11 @@ export class QuerySession {
               this.project.sources[name]!,
               resolve(this.project.dataDir || "."),
               this.adapters,
+              signal,
             ),
           );
         await this.mounted.get(name);
+        check();
       }
       // Only a single relational query is accepted; materialization is capped.
       const reader = await connection.runAndReadAll(
@@ -63,14 +82,19 @@ export class QuerySession {
         statement.values,
       );
       const rows = reader.getRowObjectsJson() as Row[];
+      check();
       return {
         columns: reader.columnNames(),
         rows: rows.slice(0, limit),
         truncated: rows.length > limit,
         durationMs: Math.round(performance.now() - start),
       };
+    } catch (error) {
+      check();
+      throw error;
     } finally {
       clearTimeout(timer);
+      signal.removeEventListener("abort", interrupt);
     }
   }
 

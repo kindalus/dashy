@@ -20,7 +20,7 @@ Each data request gets its own DuckDB instance. The browser loads independent qu
 ## Limits and data types
 
 - Query results default to 10,000 rows. Set `maxRows` per query, up to 100,000. `truncated` signals that more rows exist.
-- A query connection is interrupted after 30 seconds. This interruption does not cancel an Excel workbook parse already in progress.
+- A query is interrupted after 30 seconds, including source mounting. HTTP cancellation interrupts the request's connection and prevents subsequent sources and SQL from running. ExcelJS cannot stop a workbook parse already in progress; Dashy checks cancellation as soon as parsing returns and skips row import. Custom adapters receive an optional `signal` for cooperative cancellation.
 - Each DuckDB instance uses at most two threads and a configured memory limit of 512 MB. This is per request, not a server-wide limit.
 - SQLite and Excel imports are capped at 100,000 rows. For larger datasets, convert to CSV/Parquet or use DuckDB directly.
 - Excel `.xlsx` files are limited to 100 MB compressed file size. This does not bound decompressed memory. Use trusted, prepared workbooks; there is no upload endpoint.
@@ -50,7 +50,7 @@ An adapter mounts a table or view on the supplied DuckDB connection. It runs onc
 import { DashyEngine } from "../core/engine";
 import { mountRows, type SourceAdapter } from "../core/sources";
 
-const memory: SourceAdapter = async ({ connection, name }) => {
+const memory: SourceAdapter = async ({ connection, name, signal }) => {
   await mountRows(
     connection,
     name,
@@ -59,6 +59,8 @@ const memory: SourceAdapter = async ({ connection, name }) => {
       { category: "B", amount: 20 },
     ],
     ["category", "amount"],
+    {},
+    signal,
   );
 };
 

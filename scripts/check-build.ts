@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cp, mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
+import { cp, mkdtemp, rm, writeFile, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { DashboardResult } from "../core/types";
@@ -14,7 +14,7 @@ try {
   async function withServer(
     sample: string | undefined,
     verify: (
-      request: (path: string, method?: string) => Promise<Response>,
+      request: (path: string, method?: string, signal?: AbortSignal) => Promise<Response>,
     ) => Promise<void>,
     theme?: string,
     locale?: string,
@@ -41,8 +41,8 @@ try {
     );
     const out = new Response(child.stdout).text();
     const err = new Response(child.stderr).text();
-    const request = (path: string, method = "GET") =>
-      fetch(`http://127.0.0.1:${port}${path}`, { method });
+    const request = (path: string, method = "GET", signal?: AbortSignal) =>
+      fetch(`http://127.0.0.1:${port}${path}`, { method, signal });
     try {
       const deadline = Date.now() + 20000;
       while (true) {
@@ -200,6 +200,46 @@ try {
       "Added at runtime",
     );
   });
+  // A real HTTP disconnect must reach adapters through the packaged server.
+  const cancellationMarker = join(directory, "cancelled.txt");
+  await writeFile(
+    join(directory, "samples/runtime-added/dashy.config.js"),
+    `export default {
+      name: 'Cancellation check', params: {}, datasets: {}, metrics: {}, dashboards: {},
+      sources: { slow: { type: 'slow', path: '' } },
+      queries: { slow: { label: 'Slow', sources: ['slow'],
+        build: () => ({ text: 'SELECT 42 AS value', values: [] }) } },
+      adapters: { slow: async ({ signal }) => {
+        await Bun.write(${JSON.stringify(cancellationMarker)}, 'started');
+        await new Promise((resolve) => {
+          const timer = setTimeout(resolve, 5000);
+          signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+        });
+        await Bun.write(${JSON.stringify(cancellationMarker)}, signal.aborted ? 'cancelled' : 'finished');
+      } }
+    };`,
+  );
+  await withServer("runtime-added", async (request) => {
+    const waitForMarker = async (expected: string) => {
+      const deadline = Date.now() + 3000;
+      while (Date.now() < deadline) {
+        if (await readFile(cancellationMarker, "utf8").catch(() => "") === expected) return;
+        await Bun.sleep(20);
+      }
+      assert.fail(`Expected cancellation marker: ${expected}`);
+    };
+    const controller = new AbortController();
+    const pending = request("/api/queries/slow", "GET", controller.signal).catch((error) => error);
+    try {
+      await waitForMarker("started");
+      controller.abort();
+      assert.equal((await pending).name, "AbortError");
+      await waitForMarker("cancelled");
+    } finally {
+      controller.abort();
+      await pending;
+    }
+  });
   // Locale selection must reach both the API and the hydration data.
   await writeFile(
     join(directory, "samples/runtime-added/dashy.config.js"),
@@ -263,7 +303,7 @@ try {
     /Available samples: maven-analytics, runtime-added, source-examples/,
   );
   console.log(
-    "Production passed: empty default, runtime discovery, Maven data, six adapters, SSR, assets, filters and missing-sample errors in an isolated deployment.",
+    "Production passed: empty default, runtime discovery, Maven data, six adapters, SSR, assets, filters, locale/theme overrides, HTTP cancellation and missing-sample errors in an isolated deployment.",
   );
 } finally {
   await rm(directory, { recursive: true, force: true });

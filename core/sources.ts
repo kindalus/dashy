@@ -10,6 +10,7 @@ export interface AdapterContext {
   source: SourceDefinition;
   name: string;
   path: string;
+  signal?: AbortSignal;
 }
 /** Register another format by mounting a view/table named context.name. */
 export type SourceAdapter = (context: AdapterContext) => Promise<void>;
@@ -24,7 +25,9 @@ export async function mountRows(
   rows: Row[],
   columns: string[],
   types: SourceDefinition["columns"] = {},
+  signal?: AbortSignal,
 ): Promise<void> {
+  signal?.throwIfAborted();
   if (
     !columns.length ||
     new Set(columns).size !== columns.length ||
@@ -62,6 +65,7 @@ export async function mountRows(
   // The native appender retains DuckDB's casts without preparing INSERT SQL.
   const appender = await connection.createAppender(name);
   try {
+    signal?.throwIfAborted();
     for (let offset = 0; offset < rows.length; offset++) {
       const row = rows[offset]!;
       for (let i = 0; i < columns.length; i++) {
@@ -74,7 +78,10 @@ export async function mountRows(
       }
       appender.endRow();
       // Keep imports cooperative with HTTP requests and query timeouts.
-      if ((offset + 1) % 2048 === 0) await setImmediate();
+      if ((offset + 1) % 2048 === 0) {
+        await setImmediate();
+        signal?.throwIfAborted();
+      }
     }
   } finally {
     appender.closeSync();
@@ -105,7 +112,7 @@ export const builtInAdapters: Record<string, SourceAdapter> = {
       `CREATE TEMP VIEW ${identifier(name)} AS SELECT * FROM ${catalog}.${identifier(source.schema || "main")}.${identifier(source.table)}`,
     );
   },
-  sqlite: async ({ connection, name, source, path }) => {
+  sqlite: async ({ connection, name, source, path, signal }) => {
     if (!source.table) throw new Error(`SQLite source ${name} requires table`);
     // https://bun.sh/docs/runtime/sqlite#readonly-mode
     const { Database } = await import("bun:sqlite");
@@ -145,18 +152,20 @@ export const builtInAdapters: Record<string, SourceAdapter> = {
         rows,
         statement.columnNames,
         source.columns,
+        signal,
       );
     } finally {
       db.close();
     }
   },
-  excel: async ({ connection, name, source, path }) => {
+  excel: async ({ connection, name, source, path, signal }) => {
     if ((await stat(path)).size > MAX_FILE_BYTES)
       throw new Error("Excel file exceeds 100 MB");
     // https://github.com/exceljs/exceljs#reading-xlsx
     const { default: ExcelJS } = await import("exceljs");
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(path);
+    signal?.throwIfAborted();
     const sheet = source.sheet
       ? workbook.getWorksheet(source.sheet)
       : workbook.worksheets[0];
@@ -195,7 +204,7 @@ export const builtInAdapters: Record<string, SourceAdapter> = {
       });
       rows.push(result);
     });
-    await mountRows(connection, name, rows, columns, source.columns);
+    await mountRows(connection, name, rows, columns, source.columns, signal);
   },
 };
 export async function mountSource(
@@ -204,10 +213,12 @@ export async function mountSource(
   source: SourceDefinition,
   dataDir: string,
   adapters: Record<string, SourceAdapter>,
+  signal?: AbortSignal,
 ): Promise<void> {
+  signal?.throwIfAborted();
   const adapter = adapters[source.type];
   if (!adapter)
     throw new Error(`No adapter registered for source type: ${source.type}`);
   const path = resolve(dataDir, source.path);
-  await adapter({ connection, source, name, path });
+  await adapter({ connection, source, name, path, signal });
 }

@@ -62,15 +62,15 @@ export function createApiHandler(engine: DashyEngine) {
           throw new DashyError("Invalid endpoint name");
         }
         if (independent)
-          result = await engine.dashboardData(name, group, params, principal);
+          result = await engine.dashboardData(name, group, params, principal, request.signal);
         else if (parts[1] === "dashboards")
-          result = await engine.dashboard(name, params, principal);
+          result = await engine.dashboard(name, params, principal, request.signal);
         else if (parts[1] === "datasets")
-          result = await engine.dataset(name, params, principal);
+          result = await engine.dataset(name, params, principal, undefined, request.signal);
         else if (parts[1] === "metrics")
-          result = { value: await engine.metric(name, params, principal) };
+          result = { value: await engine.metric(name, params, principal, undefined, request.signal) };
         else if (parts[1] === "queries")
-          result = await engine.query(name, params, principal);
+          result = await engine.query(name, params, principal, request.signal);
         else throw new DashyError("Endpoint not found", 404);
       }
       return Response.json(result, { headers: responseHeaders });
