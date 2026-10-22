@@ -1,0 +1,12 @@
+@import "./themes/excel.css";
+@import "./themes/chromeos.css";
+@import "./themes/chatgpt.css";
+@import "./themes/claude-code.css";
+@import "./themes/macos.css";
+@import "./themes/corners.css";
+
+/* The product mark remains the same in every implementation. */
+:root {
+  --brand-background: #060912;
+  --brand-foreground: #ffffff;
+}

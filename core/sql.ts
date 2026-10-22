@@ -1,0 +1,42 @@
+import type { Scalar, SqlStatement } from "./types";
+
+/** Values are always bound. Identifiers must come from application definitions. */
+export function identifier(value: string): string {
+  if (!value || value.includes("\0")) throw new Error("Invalid SQL identifier");
+  return `"${value.replaceAll('"', '""')}"`;
+}
+export function literal(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+export const sql = {
+  fragment(text: string, values: Scalar[] = []): SqlStatement {
+    return { text, values };
+  },
+  eq(column: string, value: Scalar | undefined): SqlStatement {
+    return value === undefined || value === null || value === ""
+      ? { text: "", values: [] }
+      : { text: `${column} = ?`, values: [value] };
+  },
+  in(column: string, values: Scalar[]): SqlStatement {
+    return values.length
+      ? { text: `${column} IN (${values.map(() => "?").join(", ")})`, values }
+      : { text: "", values: [] };
+  },
+  range(
+    column: string,
+    value: { from: Scalar; until: Scalar } | undefined,
+  ): SqlStatement {
+    return value
+      ? { text: `${column} BETWEEN ? AND ?`, values: [value.from, value.until] }
+      : { text: "", values: [] };
+  },
+  where(...parts: SqlStatement[]): SqlStatement {
+    const active = parts.filter((p) => p.text);
+    return {
+      text: active.length
+        ? `WHERE ${active.map((p) => `(${p.text})`).join(" AND ")}`
+        : "",
+      values: active.flatMap((p) => p.values),
+    };
+  },
+};

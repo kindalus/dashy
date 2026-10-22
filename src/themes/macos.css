@@ -1,0 +1,43 @@
+:root[data-theme="macos"] {
+  color-scheme: light;
+  --font-ui:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    sans-serif;
+  --canvas: #f1f2f5;
+  --surface: #ffffff;
+  --surface-hover: #e9edf4;
+  --sidebar: #eceef2;
+  --text: #292a2e;
+  --muted: #6a6d75;
+  --nav-text: #50545e;
+  --nav-group: #666b76;
+  --line: #d9dce3;
+  --control-border: #b5bac5;
+  --accent: #2864b5;
+  --accent-hover: #1b5098;
+  --accent-soft: #dae6f7;
+  --accent-border: #9ab8de;
+  --on-accent: #ffffff;
+  --focus: #3483d6;
+  --header-background: #f7f8fae8;
+  --header-text: #454954;
+  --header-border: #d9dce3;
+  --header-badge-border: #bec7d5;
+  --metric-color: #385e91;
+  --metric-border: #a3bada;
+  --metric-font-size: clamp(18px, 12cqi, 36px);
+  --panel-shadow: 0 1px 3px #242c3d10, 0 6px 18px #242c3d06;
+  --header-blur: blur(16px);
+  --table-heading: #f0f2f6;
+  --row-hover: #f3f6fb;
+  --danger: #a4262c;
+  --danger-border: #e3b3b6;
+  --danger-soft: #fdf3f4;
+  --chart-1: #4b7fbc;
+  --chart-2: #488965;
+  --chart-3: #9366ab;
+  --chart-4: #b78b32;
+  --chart-5: #c26c61;
+  --chart-6: #328b99;
+  --chart-grid: #e2e5eb;
+}

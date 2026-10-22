@@ -1,0 +1,13 @@
+date,region,product,units,revenue
+2026-01-10,North,Notebook,12,240
+2026-01-18,South,Desk lamp,8,320
+2026-02-04,North,Desk lamp,10,400
+2026-02-21,South,Notebook,18,360
+2026-03-07,North,Notebook,20,400
+2026-03-19,South,Desk lamp,15,600
+2026-04-05,North,Desk lamp,16,640
+2026-04-20,South,Notebook,25,500
+2026-05-09,North,Notebook,28,560
+2026-05-25,South,Desk lamp,21,840
+2026-06-03,North,Desk lamp,23,920
+2026-06-17,South,Notebook,32,640

@@ -1,0 +1,86 @@
+[
+  {
+    "date": "2026-01-10",
+    "region": "North",
+    "product": "Notebook",
+    "units": "12",
+    "revenue": "240"
+  },
+  {
+    "date": "2026-01-18",
+    "region": "South",
+    "product": "Desk lamp",
+    "units": "8",
+    "revenue": "320"
+  },
+  {
+    "date": "2026-02-04",
+    "region": "North",
+    "product": "Desk lamp",
+    "units": "10",
+    "revenue": "400"
+  },
+  {
+    "date": "2026-02-21",
+    "region": "South",
+    "product": "Notebook",
+    "units": "18",
+    "revenue": "360"
+  },
+  {
+    "date": "2026-03-07",
+    "region": "North",
+    "product": "Notebook",
+    "units": "20",
+    "revenue": "400"
+  },
+  {
+    "date": "2026-03-19",
+    "region": "South",
+    "product": "Desk lamp",
+    "units": "15",
+    "revenue": "600"
+  },
+  {
+    "date": "2026-04-05",
+    "region": "North",
+    "product": "Desk lamp",
+    "units": "16",
+    "revenue": "640"
+  },
+  {
+    "date": "2026-04-20",
+    "region": "South",
+    "product": "Notebook",
+    "units": "25",
+    "revenue": "500"
+  },
+  {
+    "date": "2026-05-09",
+    "region": "North",
+    "product": "Notebook",
+    "units": "28",
+    "revenue": "560"
+  },
+  {
+    "date": "2026-05-25",
+    "region": "South",
+    "product": "Desk lamp",
+    "units": "21",
+    "revenue": "840"
+  },
+  {
+    "date": "2026-06-03",
+    "region": "North",
+    "product": "Desk lamp",
+    "units": "23",
+    "revenue": "920"
+  },
+  {
+    "date": "2026-06-17",
+    "region": "South",
+    "product": "Notebook",
+    "units": "32",
+    "revenue": "640"
+  }
+]

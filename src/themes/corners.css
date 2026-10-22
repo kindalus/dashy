@@ -1,0 +1,51 @@
+/* SSR writes these attributes before the first paint. */
+:root {
+  --radius-input: 0px;
+  --radius-button: 0px;
+  --radius-panel: 0px;
+}
+:root[data-corners-inputs="none"] {
+  --radius-input: 0px;
+}
+:root[data-corners-inputs="rounded-sm"] {
+  --radius-input: 4px;
+}
+:root[data-corners-inputs="rounded-md"] {
+  --radius-input: 8px;
+}
+:root[data-corners-inputs="rounded-lg"] {
+  --radius-input: 16px;
+}
+:root[data-corners-inputs="rounded"] {
+  --radius-input: 16px;
+}
+:root[data-corners-buttons="none"] {
+  --radius-button: 0px;
+}
+:root[data-corners-buttons="rounded-sm"] {
+  --radius-button: 4px;
+}
+:root[data-corners-buttons="rounded-md"] {
+  --radius-button: 8px;
+}
+:root[data-corners-buttons="rounded-lg"] {
+  --radius-button: 16px;
+}
+:root[data-corners-buttons="rounded"] {
+  --radius-button: 9999px;
+}
+:root[data-corners-panels="none"] {
+  --radius-panel: 0px;
+}
+:root[data-corners-panels="rounded-sm"] {
+  --radius-panel: 4px;
+}
+:root[data-corners-panels="rounded-md"] {
+  --radius-panel: 8px;
+}
+:root[data-corners-panels="rounded-lg"] {
+  --radius-panel: 16px;
+}
+:root[data-corners-panels="rounded"] {
+  --radius-panel: 24px;
+}
