@@ -84,3 +84,49 @@ chart/table switching, pagination, preserving Table while resetting to page one
 on refresh, no-results filters and recovery, and resizing between 1440 and 390
 pixels. SVG widths match their containers after resize; screenshots show both
 charts and no horizontal page overflow. No console errors or warnings occurred.
+
+## Final review, 2026-10-22
+
+The final benchmark run confirmed the earlier measurements, with medians of
+4.19 ms for numbers, 3.78 ms for dates, 101.09 ms for imports, 704.80 ms for the
+Maven overview and 726.39 ms for four concurrent overviews. These runs use the
+same assertions and workloads as the baseline; no test or result was removed
+to obtain the improvements.
+
+Validation completed:
+
+- `bun test tests`: 57 passed, 0 failed, 2,370 assertions. Coverage includes
+  all six source formats, parameter and permission contracts, cross-request
+  isolation, nulls, truncation, query sharing, source freshness and Maven totals.
+- `bun run typecheck` and `bun run build`: passed.
+- `bun run check:build`: passed outside the source tree, exercising the packaged
+  CLI, default project, runtime sample discovery, APIs, SSR, asset availability,
+  all five themes, theme overrides and startup failures.
+- Browser checks above passed on the production build. Performance observations
+  are local synthetic results; production traffic was not measured.
+
+The architecture review covered configuration/CLI loading, HTTP and SSR entry
+points, engine authorization and query orchestration, source mounting, and client
+rendering. Database lifetime now belongs to the request, and renderer lifetime
+belongs to the visible chart. Existing project definitions and public engine
+calls remain compatible. Data and authentication stay on the server; browser
+rendering receives only the catalog and results. No dependencies were added.
+
+Further changes considered but not implemented:
+
+- Persistent data/result caches or shared database pools would require freshness
+  and principal-isolation policies. The measured gains above do not depend on
+  stale data or sharing mutable connections across requests.
+- Materializing every CSV/Parquet source before querying could reduce repeated
+  scans, but also copies unused columns/rows and removes native scan pushdown.
+  Keep native views until workloads justify that memory/I/O tradeoff.
+- Parallelizing dashboard queries would complicate connection ownership and
+  increase resource demand. Request concurrency already remains isolated and
+  is covered by the benchmark.
+- Table virtualization would add complexity to tables that render eight rows per
+  page. Further file splitting or layout lookup caches have no demonstrated
+  benefit for the existing small dashboards.
+
+No remaining change was justified by the reviewed architecture and measured
+workloads. Larger data, higher request concurrency or new chart types should
+start a new measurement cycle rather than assuming these local results apply.
