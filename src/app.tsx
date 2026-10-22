@@ -30,11 +30,10 @@ export interface AppProps {
   dashboard: DashboardShell | null;
 }
 export function App(props: AppProps) {
-  const [loads, setLoads] = createSignal<DashboardLoads>({});
   const loader = props.dashboard
-    ? new DashboardLoader(props.dashboard, setLoads)
+    ? new DashboardLoader(props.dashboard, (state) => setLoads(state))
     : undefined;
-  if (loader) setLoads(loader.state);
+  const [loads, setLoads] = createSignal<DashboardLoads>(loader?.state || {});
   let form!: HTMLFormElement;
   const definition = () => props.dashboard?.definition;
   const locale = () => props.catalog.locale;
