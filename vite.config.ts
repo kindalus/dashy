@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { resolveLocations } from "./core/locations.ts";
 import { loadImplementation } from "./core/runtime.ts";
+import { serverOnlyPlugin } from "./scripts/server-only-plugin.ts";
 import { extensionsPlugin } from "./scripts/extensions-plugin.ts";
 import { defineConfig } from "vite";
 import solid from "@solidjs/vite-plugin";
@@ -21,6 +22,7 @@ export default defineConfig(async ({ command }) => {
       dedupe: ["solid-js", "@solidjs/web", "@solidjs/signals"],
     },
     plugins: [
+      await serverOnlyPlugin(locations),
       await extensionsPlugin(project, locations.extensionsDir),
       solid({ ssr: true }),
       nitro({

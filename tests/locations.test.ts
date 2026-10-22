@@ -66,3 +66,16 @@ test("explicit sample selection excludes external paths but retains presentation
   expect((await loadImplementation(locations)).pages).toBeUndefined();
   expect((await loadImplementation(locations)).locale).toBe("en");
 });
+
+test("API-only external extensions merge routes without requiring a page registry", async () => {
+  const directory = join(root, "api-only");
+  await mkdir(join(directory, "api"), { recursive: true });
+  await writeFile(join(directory, "api/index.ts"), `export default { hello: { method: 'GET', path: '/hello', handler: () => Response.json({hello: true}) } };`);
+  const locations = await resolveLocations({ env: { DASHY_CONFIG: join(root, "implementation/dashy.config.ts"), DASHY_EXTENSIONS_DIR: directory } });
+  const project = await loadImplementation(locations);
+  expect(project.pages).toBeUndefined();
+  expect(await (await project.api!.hello!.handler({} as never)).json()).toEqual({ hello: true });
+  const config = join(root, "api-duplicate.ts");
+  await writeFile(config, `export default { ...${JSON.stringify(empty)}, api: { hello: {method: 'GET', path: '/other', handler: () => new Response()} } };`);
+  await expect(loadImplementation(await resolveLocations({ env: { DASHY_CONFIG: config, DASHY_EXTENSIONS_DIR: directory } }))).rejects.toThrow("Duplicate api identifier");
+});

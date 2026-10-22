@@ -1,6 +1,9 @@
 import type { ParamDefinition, Params, ParamValue, Scalar } from "./types";
 
+// Symbol.for survives independently bundled runtime configurations and the server.
+const errorBrand = Symbol.for("dashy.error");
 export class DashyError extends Error {
+  readonly [errorBrand] = true;
   constructor(
     message: string,
     public status = 400,
@@ -8,6 +11,11 @@ export class DashyError extends Error {
     super(message);
     this.name = "DashyError";
   }
+}
+export function isDashyError(error: unknown): error is DashyError {
+  return error instanceof Error && errorBrand in error && error[errorBrand] === true
+    && "status" in error && typeof error.status === "number" && Number.isInteger(error.status)
+    && error.status >= 400 && error.status <= 599;
 }
 const empty = (v: unknown) =>
   v === undefined || v === null || v === "" || (Array.isArray(v) && !v.length);

@@ -3,3 +3,6 @@ export { defineProject, defineConfig } from "./project";
 export { sql, identifier } from "./sql";
 export type * from "./types";
 export type { SourceAdapter } from "./sources";
+
+export { defineApiRoutes } from "./api-definition";
+export { DashyError } from "./params";

@@ -123,6 +123,35 @@ export type ProjectConfig = Omit<ProjectDefinition, keyof ArtifactRegistries>
 export interface Principal {
   roles: readonly string[];
 }
+export interface ApiContext {
+  request: Request;
+  pathParams: Record<string, string>;
+  query: URLSearchParams;
+  /** Validated declared query parameters, including null for explicitly cleared values. */
+  params: Params;
+  principal: Principal | undefined;
+  signal: AbortSignal;
+  /** Parses bounded JSON as unknown; the handler validates its domain fields. */
+  readJson(): Promise<unknown>;
+  data: {
+    dataset(name: string, params?: Record<string, unknown>): Promise<QueryResult>;
+    metric(name: string, params?: Record<string, unknown>): Promise<Scalar>;
+    query(name: string, params?: Record<string, unknown>): Promise<QueryResult>;
+  };
+}
+export interface ApiRouteDefinition {
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  /** Relative to /api/custom, e.g. /customers/:id. */
+  path: string;
+  roles?: readonly string[];
+  /** Project query parameters to validate. Omit to handle query manually. */
+  params?: readonly string[];
+  /** Entire request body limit, default 1 MiB. */
+  maxBodyBytes?: number;
+  handler(context: ApiContext): Response | Promise<Response>;
+}
+export type ApiRoutes = Record<string, ApiRouteDefinition>;
+
 export interface ProjectDefinition {
   name: string;
   theme?: import("./theme").ThemeConfig;
@@ -137,6 +166,7 @@ export interface ProjectDefinition {
   metrics: Record<string, MetricDefinition>;
   dashboards: Record<string, DashboardDefinition>;
   pages?: Record<string, PageDefinition>;
+  api?: ApiRoutes;
   /** Server-only adapters for additional source types. */
   adapters?: Record<string, import("./sources").SourceAdapter>;
   /** Optional application-owned authentication. Return null for an unauthenticated request. */

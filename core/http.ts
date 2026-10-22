@@ -1,5 +1,6 @@
+import { createCustomApiHandler } from "./custom-api";
 import { DashyEngine } from "./engine";
-import { DashyError, readParams } from "./params";
+import { DashyError, isDashyError, readParams } from "./params";
 import type { Principal } from "./types";
 
 export async function authenticate(
@@ -18,31 +19,40 @@ export const responseHeaders = {
   "X-Frame-Options": "DENY",
 };
 export function errorResponse(error: unknown): Response {
-  if (!(error instanceof DashyError))
+  if (!isDashyError(error))
     console.error("[dashy] Request failed", error);
   return Response.json(
     {
       error:
-        error instanceof DashyError
+        isDashyError(error)
           ? error.message
           : "Unable to complete the request. Check the server logs.",
     },
     {
-      status: error instanceof DashyError ? error.status : 500,
+      status: isDashyError(error) ? error.status : 500,
       headers: responseHeaders,
     },
   );
 }
 export function createApiHandler(engine: DashyEngine) {
+  const custom = createCustomApiHandler(engine);
   return async (request: Request): Promise<Response> => {
     try {
+      if (request.url.length > 16_384) throw new DashyError("Request URL is too long", 414);
+      const path = new URL(request.url).pathname;
+      if (path === "/api/custom" || path.startsWith("/api/custom/")) {
+        const principal = await authenticate(engine, request);
+        const response = await custom(request, principal);
+        const headers = new Headers(response.headers);
+        for (const [name, value] of Object.entries(responseHeaders)) headers.set(name, value);
+        if (request.method === "HEAD") void response.body?.cancel().catch(() => {});
+        return new Response(request.method === "HEAD" ? null : response.body, { status: response.status, statusText: response.statusText, headers });
+      }
       if (request.method !== "GET")
         return Response.json(
           { error: "Method not allowed" },
           { status: 405, headers: { ...responseHeaders, Allow: "GET" } },
         );
-      if (request.url.length > 16_384)
-        throw new DashyError("Request URL is too long", 414);
       const principal = await authenticate(engine, request);
       const url = new URL(request.url);
       const parts = url.pathname.split("/").filter(Boolean);
@@ -75,7 +85,8 @@ export function createApiHandler(engine: DashyEngine) {
       }
       return Response.json(result, { headers: responseHeaders });
     } catch (error) {
-      return errorResponse(error);
+      const response = errorResponse(error);
+      return request.method === "HEAD" ? new Response(null, { status: response.status, headers: response.headers }) : response;
     }
   };
 }

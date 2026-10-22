@@ -3,7 +3,7 @@ export { findConfig, listSamples, selectConfig } from "./discovery.ts";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { defineProject } from "./project.ts";
-import { findRegistry, type ProjectLocations } from "./locations.ts";
+import { findExtensionRegistries, findRegistry, type ProjectLocations } from "./locations.ts";
 import type { ProjectDefinition } from "./types.ts";
 import { resolveTheme, type ThemeName } from "./theme.ts";
 
@@ -31,12 +31,17 @@ export async function loadProject(
           throw new Error(`Unknown artifact registry: ${key}`);
       for (const key of registries) base[key] = mergeRegistry(key, base[key], artifacts[key]);
     }
-    const extensionPath = await findRegistry(locations.extensionsDir, locations.extensionsRequired);
+    const { pages: extensionPath, api: apiPath } = await findExtensionRegistries(locations.extensionsDir, locations.extensionsRequired);
     if (extensionPath) {
       const pages = (await importConfig(pathToFileURL(extensionPath).href)).default;
       if (!pages || typeof pages !== "object" || Array.isArray(pages))
         throw new Error(`Extensions ${extensionPath} must have a default pages export.`);
       base.pages = mergeRegistry("pages", base.pages, pages);
+    }
+    if (apiPath) {
+      const api = (await importConfig(pathToFileURL(apiPath).href)).default;
+      if (!api || typeof api !== "object" || Array.isArray(api)) throw new Error(`API ${apiPath} must have a default routes export.`);
+      base.api = mergeRegistry("api", base.api, api);
     }
   }
   for (const key of registries) {

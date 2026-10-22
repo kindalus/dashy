@@ -2,7 +2,7 @@ import { QuerySession } from "./query-session";
 import { builtInAdapters, type SourceAdapter } from "./sources";
 import { defineProject } from "./project";
 import { resolveTheme } from "./theme";
-import { DashyError, parseParams, selectParams } from "./params";
+import { DashyError, isDashyError, parseParams, selectParams } from "./params";
 import { identifier, sql } from "./sql";
 import type {
   BlockResult,
@@ -278,13 +278,13 @@ export class DashyEngine {
             });
         } catch (error) {
           if (signal?.aborted) throw new DashyError("Request cancelled", 499);
-          if (!(error instanceof DashyError))
+          if (!isDashyError(error))
             console.error(`[dashy] Block ${block.id} failed`, error);
           blocks.push({
             id: block.id,
             type: "error",
             message:
-              error instanceof DashyError
+              isDashyError(error)
                 ? error.message
                 : "Unable to load this block. Check the server logs and source configuration.",
           });

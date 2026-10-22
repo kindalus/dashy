@@ -56,3 +56,11 @@ export async function findRegistry(directory: string, required = false) {
   if (!config && required) throw new Error(`Missing index.ts, index.js or index.mjs in ${directory}`);
   return config;
 }
+
+/** Pages remain backward compatible; an explicit extensions directory may contain only API routes. */
+export async function findExtensionRegistries(directory: string, required = false) {
+  const [pages, api] = await Promise.all([findRegistry(directory), findRegistry(resolve(directory, "api"))]);
+  if (required && !pages && !api)
+    throw new Error(`Missing index.ts, index.js or index.mjs in ${directory} or its api directory`);
+  return { pages, api };
+}

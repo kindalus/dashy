@@ -1,5 +1,6 @@
 import type { ProjectDefinition, ProjectConfig } from "./types.ts";
 import { dashboardIconNames } from "./icons.ts";
+import { defineApiRoutes } from "./api-definition.ts";
 import { resolveTheme } from "./theme.ts";
 
 export function defineProject<const T extends ProjectDefinition>(
@@ -83,6 +84,8 @@ export function defineProject<const T extends ProjectDefinition>(
         );
     }
   }
+  defineApiRoutes(project.api ?? {});
+  for (const [name, route] of Object.entries(project.api ?? {})) params(name, route.params);
   names("pages", project.pages ?? {});
   for (const [name, page] of Object.entries(project.pages ?? {})) {
     assert(typeof page.label === "string" && page.label.trim(), `${name} page requires a label`);

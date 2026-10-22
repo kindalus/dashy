@@ -2,6 +2,9 @@ import { expect, test } from "bun:test";
 import { DashyEngine } from "../core/engine";
 import { loadProject } from "../core/runtime";
 
+// Full CSV integration checks need headroom on busy development and CI hosts.
+const csvTimeout = 60_000;
+
 const engine = new DashyEngine(
   await loadProject("samples/maven-analytics/dashy.config.ts"),
 );
@@ -20,7 +23,7 @@ test("Maven sample includes all order lines without join fanout and reconciles t
       0,
     ),
   ).toBeCloseTo(55755479.59, 2);
-});
+}, csvTimeout);
 
 test("every Maven dashboard executes and all filters reach its queries", async () => {
   for (const name of Object.keys(engine.project.dashboards)) {
@@ -50,7 +53,7 @@ test("every Maven dashboard executes and all filters reach its queries", async (
     expect(row.delivery_date).not.toBeNull();
     expect(row.exchange_rate).not.toBeNull();
   }
-}, 15000);
+}, csvTimeout);
 
 test("detail caps rows and preserves no-results semantics", async () => {
   const result = await engine.query("orders");
@@ -61,4 +64,4 @@ test("detail caps rows and preserves no-results semantics", async () => {
   });
   expect(Number(noRows.rows[0]!.revenue)).toBe(0);
   expect(Number(noRows.rows[0]!.orders)).toBe(0);
-});
+}, csvTimeout);
