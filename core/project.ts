@@ -1,4 +1,4 @@
-import type { ProjectDefinition } from "./types";
+import type { ProjectDefinition, ProjectConfig } from "./types";
 import { dashboardIconNames } from "./icons";
 import { resolveTheme } from "./theme";
 
@@ -83,6 +83,19 @@ export function defineProject<const T extends ProjectDefinition>(
         );
     }
   }
+  names("pages", project.pages ?? {});
+  for (const [name, page] of Object.entries(project.pages ?? {})) {
+    assert(typeof page.label === "string" && page.label.trim(), `${name} page requires a label`);
+    assert(typeof page.component === "string" && /\.(tsx|jsx)$/.test(page.component)
+      && !page.component.startsWith("/") && !page.component.includes("\\")
+      && !page.component.split("/").includes(".."), `${name} component must be a relative .tsx or .jsx path inside extensions`);
+    params(name, page.params);
+    for (const key of Object.keys(page.defaults ?? {}))
+      assert(page.params?.includes(key), `${name} default ${key} is not a page parameter`);
+    assert(page.icon === undefined || dashboardIconNames.includes(page.icon), `${name} has unknown icon '${page.icon}'`);
+    assert(page.group === undefined || (typeof page.group === "string" && page.group.trim() && page.group.trim() === page.group), `${name} group must be a non-empty label without surrounding whitespace`);
+    assert(page.roles === undefined || (Array.isArray(page.roles) && page.roles.every(role => typeof role === "string")), `${name} roles must be strings`);
+  }
   for (const [name, dashboard] of Object.entries(project.dashboards)) {
     assert(
       dashboard.icon === undefined ||
@@ -134,4 +147,9 @@ export function defineProject<const T extends ProjectDefinition>(
     }
   }
   return project;
+}
+
+/** Compose external registries at runtime before validating cross-references. */
+export function defineConfig<const T extends ProjectConfig>(config: T): T & ProjectDefinition {
+  return { params: {}, sources: {}, queries: {}, datasets: {}, metrics: {}, dashboards: {}, ...config };
 }

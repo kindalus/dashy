@@ -41,5 +41,9 @@
   },
   "bin": {
     "dashy": "bin/dashy.ts"
+  },
+  "exports": {
+    ".": "./core/index.ts",
+    "./types": "./core/types.ts"
   }
 }

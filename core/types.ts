@@ -105,6 +105,21 @@ export interface DashboardDefinition {
   roles?: readonly string[];
   blocks: readonly DashboardBlock[];
 }
+/** The component path is relative to the implementation's extensions directory. */
+export interface PageDefinition extends Omit<DashboardDefinition, "blocks"> {
+  component: string;
+}
+export type PageMetadata = Omit<PageDefinition, "component">;
+export interface PageShell {
+  id: string;
+  definition: PageMetadata;
+  params: Params;
+}
+export type ArtifactRegistries = Pick<ProjectDefinition,
+  "params" | "sources" | "queries" | "datasets" | "metrics" | "dashboards">;
+export type ProjectConfig = Omit<ProjectDefinition, keyof ArtifactRegistries>
+  & Partial<ArtifactRegistries>;
+
 export interface Principal {
   roles: readonly string[];
 }
@@ -121,6 +136,7 @@ export interface ProjectDefinition {
   datasets: Record<string, DatasetDefinition>;
   metrics: Record<string, MetricDefinition>;
   dashboards: Record<string, DashboardDefinition>;
+  pages?: Record<string, PageDefinition>;
   /** Server-only adapters for additional source types. */
   adapters?: Record<string, import("./sources").SourceAdapter>;
   /** Optional application-owned authentication. Return null for an unauthenticated request. */
@@ -164,6 +180,7 @@ export interface DashboardData {
   generatedAt: string;
 }
 export interface Catalog {
+  pages?: Record<string, PageMetadata>;
   name: string;
   theme: import("./theme").ResolvedTheme;
   description?: string;

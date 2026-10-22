@@ -1,106 +1,75 @@
-import { readdir, stat } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+export { findConfig, listSamples, selectConfig } from "./discovery";
+import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { defineProject } from "./project";
+import { findRegistry, type ProjectLocations } from "./locations";
 import type { ProjectDefinition } from "./types";
 import { resolveTheme, type ThemeName } from "./theme";
-
-async function isFile(path: string): Promise<boolean> {
-  try {
-    return (await stat(path)).isFile();
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw error;
-  }
-}
-
-export async function findConfig(
-  directory: string,
-): Promise<string | undefined> {
-  for (const name of [
-    "dashy.config.ts",
-    "dashy.config.js",
-    "dashy.config.mjs",
-  ]) {
-    const path = join(directory, name);
-    if (await isFile(path)) return path;
-  }
-}
-
-/** Discover only immediate sample directories containing a project entry. */
-export async function listSamples(root: string): Promise<string[]> {
-  let entries;
-  try {
-    entries = await readdir(join(root, "samples"), { withFileTypes: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
-  const names: string[] = [];
-  for (const entry of entries) {
-    if (
-      entry.isDirectory() &&
-      /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(entry.name) &&
-      (await findConfig(join(root, "samples", entry.name)))
-    )
-      names.push(entry.name);
-  }
-  return names.sort();
-}
-
-export async function selectConfig(
-  root: string,
-  sample?: string,
-): Promise<string> {
-  root = resolve(root);
-  if (sample !== undefined) {
-    const available = await listSamples(root);
-    if (!available.includes(sample)) {
-      throw new Error(
-        `Sample '${sample}' not found in ${join(root, "samples")}. Available samples: ${available.join(", ") || "none"}.`,
-      );
-    }
-    return (await findConfig(join(root, "samples", sample)))!;
-  }
-  const config = await findConfig(root);
-  if (!config)
-    throw new Error(
-      `No dashy.config.ts or dashy.config.js found in ${root}. Run Dashy from the project root.`,
-    );
-  return config;
-}
 
 /** Import trusted server code at runtime, outside Vite's module graph. */
 export async function loadProject(
   configPath: string,
   theme?: string,
   locale?: string,
+  locations?: ProjectLocations,
 ): Promise<ProjectDefinition> {
   const path = resolve(configPath);
   const module = await import(/* @vite-ignore */ pathToFileURL(path).href);
   if (!module.default || typeof module.default !== "object")
     throw new Error(`Project ${path} must have a default project export.`);
-  for (const key of [
-    "params",
-    "sources",
-    "queries",
-    "datasets",
-    "metrics",
-    "dashboards",
-  ]) {
-    const registry = module.default[key];
+  const base = { ...module.default };
+  const registries = ["params", "sources", "queries", "datasets", "metrics", "dashboards"] as const;
+  if (locations) {
+    const artifactPath = await findRegistry(locations.artifactsDir, locations.artifactsRequired);
+    if (artifactPath) {
+      const artifacts = (await import(/* @vite-ignore */ pathToFileURL(artifactPath).href)).default;
+      if (!artifacts || typeof artifacts !== "object" || Array.isArray(artifacts))
+        throw new Error(`Artifacts ${artifactPath} must have a default registry export.`);
+      for (const key of Object.keys(artifacts))
+        if (!(registries as readonly string[]).includes(key))
+          throw new Error(`Unknown artifact registry: ${key}`);
+      for (const key of registries) base[key] = mergeRegistry(key, base[key], artifacts[key]);
+    }
+    const extensionPath = await findRegistry(locations.extensionsDir, locations.extensionsRequired);
+    if (extensionPath) {
+      const pages = (await import(/* @vite-ignore */ pathToFileURL(extensionPath).href)).default;
+      if (!pages || typeof pages !== "object" || Array.isArray(pages))
+        throw new Error(`Extensions ${extensionPath} must have a default pages export.`);
+      base.pages = mergeRegistry("pages", base.pages, pages);
+    }
+  }
+  for (const key of registries) {
+    const registry = base[key];
     if (!registry || typeof registry !== "object" || Array.isArray(registry))
       throw new Error(`Project ${path} must define a ${key} registry.`);
   }
   const project = defineProject({
-    ...module.default,
-    locale: locale ?? module.default.locale ?? "pt",
+    ...base,
+    locale: locale ?? base.locale ?? "pt",
     ...(theme === undefined
       ? {}
       : { theme: resolveTheme({ name: theme as ThemeName }) }),
   });
   return {
     ...project,
-    dataDir: resolve(dirname(path), project.dataDir || "."),
+    dataDir: locations?.dataDir ?? resolve(dirname(path), project.dataDir || "."),
   };
+}
+
+function mergeRegistry(name: string, first: unknown, second: unknown) {
+  const result: Record<string, unknown> = Object.create(null);
+  for (const registry of [first, second]) {
+    if (registry === undefined) continue;
+    if (!registry || typeof registry !== "object" || Array.isArray(registry))
+      throw new Error(`Invalid ${name} registry`);
+    for (const [id, entry] of Object.entries(registry)) {
+      if (Object.hasOwn(result, id)) throw new Error(`Duplicate ${name} identifier: ${id}`);
+      result[id] = entry;
+    }
+  }
+  return result;
+}
+
+export async function loadImplementation(locations: ProjectLocations) {
+  return loadProject(locations.config, locations.theme, locations.locale, locations);
 }
