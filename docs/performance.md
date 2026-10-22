@@ -192,3 +192,66 @@ adapter starts and verifies that the adapter receives cancellation. This tests
 the Bun/Nitro transport as well as the engine. An uncooperative adapter cannot
 be forcibly stopped, but no later query starts after it returns. Excel parsing
 has the same limitation; row import checks the signal between chunks.
+
+### Completion audit
+
+An actual 30-second deadline probe returned status 504 after 30,004 ms, mounted
+zero subsequent sources and successfully ran another query on the same session.
+The row-import cancellation test also proves that a 10,000-row input stops at
+the next 2,048-row checkpoint rather than consuming the remaining rows.
+
+A final full benchmark run encountered substantial host contention: even the
+unchanged number/date formatters rose to 5.93/5.58 ms, and the aggregate dashboard
+rose to 1,213.88 ms. Those timings are not evidence of a code regression or gain.
+To check this, a detached checkout of `143bcbc` and the final implementation were
+measured sequentially with the same dependencies and workload:
+
+| Workload | Before median (range), ms | After median (range), ms | Conclusion |
+| --- | --- | --- | --- |
+| Import 10,000 rows | 109.94 (109.29–114.26) | 11.49 (11.37–12.51) | About 90% less time |
+| Independent Maven requests | 334.53 (329.79–347.26) | 352.76 (314.77–392.08) | Overlapping noisy ranges; no latency claim |
+
+Under later contention, four Online summary queries took 1,180–1,356 ms on the
+old implementation and 1,155–1,315 ms on the new one with a live cancellation
+signal. The benefit of cancellation is stopping obsolete work, not making
+uncancelled CSV scans faster.
+
+Browser validation on the packaged server covered independent loading, Online
+filter results, chart-instance preservation, table pagination, Refresh retaining
+Table while returning to page one, and a 390-pixel viewport. There were no console
+warnings/errors or horizontal page overflow; the chart SVG matched its 311-pixel
+container. A cold local page trace reported shell LCP 65 ms and CLS 0.00; its
+three data responses finished at 404–416 ms. Filter interaction INP was 55 ms.
+During host contention a later filter trace had a 3,771 ms soft-navigation LCP,
+with data requests taking 3,701–4,083 ms. These local measurements are not a field
+performance guarantee, and the shell LCP does not represent data readiness.
+
+Validation: 74 tests passed with 0 failures and 2,488 assertions; typecheck,
+production build and isolated packaged-deployment checks passed. The deployment
+check covers all source formats, CLI defaults/overrides, HTTP cancellation
+and existing response contracts; the test suite covers permissions. No dependencies were added and
+the browser bundle is unchanged in this review.
+
+The architecture audit covered configuration and parameter contracts, HTTP
+routing, engine authorization and shared-query grouping, session cleanup,
+native/imported sources, loader cancellation, formatting, tables and chart
+lifetime. Database cancellation and deadlines now live with database lifetime;
+row-import batching and casts live behind the existing `mountRows` interface.
+Public engine calls remain compatible; new signals are optional. Authentication
+checks precede data access, sessions remain isolated and every refresh rereads
+sources.
+
+No further change is justified for the measured workloads. In particular:
+
+- Persistent caches and database pools still require explicit freshness and
+  tenant-isolation policies. They would change semantics to reduce CSV scans.
+- Copying native file views into tables can sacrifice scan pushdown and increase
+  request memory. The current independent-load baseline does not justify that
+  tradeoff.
+- Tables render eight rows per page; virtualization has no useful work to save.
+  Formatters already have bounded caches and chart refreshes retain renderers.
+- Further module splitting or cached request plans would add interfaces for
+  small configurations without removing a demonstrated source of complexity.
+- Production concurrency limits, compression and field performance monitoring
+  depend on deployment traffic and topology; this local review cannot establish
+  those budgets. The per-request 512 MB DuckDB limit is not a server-wide bound.

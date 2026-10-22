@@ -98,6 +98,24 @@ test("failed native conversions reject and leave the connection usable", async (
   });
 });
 
+test("native import stops between chunks after cancellation", async () => {
+  await withConnection(async (connection) => {
+    const controller = new AbortController();
+    let read = 0;
+    const rows = Array.from({ length: 10000 }, () => ({
+      get value() {
+        if (++read === 2049) controller.abort();
+        return read;
+      },
+    }));
+    await expect(mountRows(connection, "cancelled", rows, ["value"],
+      { value: "DOUBLE" }, controller.signal)).rejects.toThrow();
+    expect(read).toBe(4096);
+    expect((await connection.runAndReadAll("SELECT 1 AS value")).getRowObjectsJson())
+      .toEqual([{ value: 1 }]);
+  });
+});
+
 test("empty imports retain columns and reject invalid column declarations", async () => {
   await withConnection(async (connection) => {
     await mountRows(connection, "empty", [], ["value"], { value: "DOUBLE" });
