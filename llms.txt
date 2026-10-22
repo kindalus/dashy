@@ -1,8 +1,8 @@
 # Dashy
 
-> Plataforma de analytics configurada em TypeScript. Uma implementação define fontes de dados, parâmetros, queries SQL, métricas, datasets e dashboards. O Dashy executa as queries em DuckDB e apresenta filtros, indicadores, gráficos e tabelas numa interface comum.
+> Plataforma de analytics configurada em TypeScript. Uma implementação define fontes de dados, parâmetros, queries SQL, métricas, datasets, dashboards e páginas Solid personalizadas. O Dashy executa as queries em DuckDB e apresenta filtros, indicadores, gráficos e tabelas numa interface comum.
 
-Este guia destina-se a agentes e programadores que implementam uma solução neste repositório. Os caminhos são relativos à raiz. Os contratos em `core/types.ts` e o código instalado são a referência quando houver diferenças entre documentação e implementação.
+Este guia destina-se a agentes e programadores que implementam uma solução com o Dashy, dentro ou fora deste repositório. Os caminhos são relativos à raiz. Os contratos em `core/types.ts` e o código instalado são a referência quando houver diferenças entre documentação e implementação.
 
 ## Referências por tarefa
 
@@ -12,6 +12,8 @@ Este guia destina-se a agentes e programadores que implementam uma solução nes
 - [Fontes e adapters](docs/sources.md): formatos, limites, tipos e integração de outras fontes.
 - [Temas](docs/themes.md): nomes, cantos e valores por omissão.
 - [Samples](samples/README.md): seleção, criação e distribuição de implementações de exemplo.
+- [Implementação externa](examples/external-application/): dashboard e página Customer 360 com configuração, artefactos e dados separados.
+- [API pública](core/index.ts) e [API de páginas](src/extension-api.ts): imports `dashy`, `dashy/types` e `dashy/ui`.
 - [Source Examples](samples/source-examples/dashy.config.ts): projeto completo com dados sintéticos nos seis formatos suportados.
 - [Maven Analytics](samples/maven-analytics/dashy.config.ts): projeto completo com dados de retalho, cinco dashboards e filtros variados.
 - [Queries Maven](samples/maven-analytics/queries.ts): SQL separado da configuração de apresentação.
@@ -30,6 +32,7 @@ Este guia destina-se a agentes e programadores que implementam uma solução nes
 | Metric | Um valor escalar de uma coluna de uma query | Query |
 | Dataset | Colunas a apresentar, formatos e gráfico opcional | Query |
 | Dashboard | Filtros, blocos, disposição, ícone e grupo de navegação | Metrics, datasets e params |
+| Page | Componente Solid personalizado, ícone, grupo e permissões | Componente em `extensions` e params |
 
 Um dataset é uma definição de apresentação sobre uma query. Os dados residem nas sources. As métricas referenciam queries diretamente, não datasets. Uma query pode juntar várias fontes e alimentar várias métricas ou datasets.
 
@@ -67,26 +70,27 @@ bun run start --with-sample maven-analytics --locale pt-AO
 bun run dashy --help
 ```
 
-Sem `--with-sample`, é carregado o projeto da raiz, inicialmente vazio. A descoberta procura `dashy.config.ts`, depois `.js`, depois `.mjs`. O módulo deve ter um export default com a definição do projeto. Um sample é uma subdiretoria imediata de `samples/` com uma dessas configurações. Selecioná-lo não copia ficheiros nem altera a configuração da raiz.
+Sem seleção externa ou `--with-sample`, é carregado o projeto da pasta atual, quando existe, ou o da instalação, inicialmente vazio. A descoberta procura `dashy.config.ts`, depois `.js`, depois `.mjs`. O módulo deve ter um export default com a definição do projeto. Um sample é uma subdiretoria imediata de `samples/` com uma dessas configurações. Selecioná-lo não copia ficheiros nem altera a configuração da raiz.
 
-As opções `--with-sample`, `--theme`, `--locale` e `--port` aplicam-se a `dev` e `start`. Reiniciar após alterar a configuração. Para disponibilizar o comando curto `dashy`, executar `bun link` e garantir que o diretório de executáveis do Bun está no PATH.
+As opções `--with-sample`, `--theme`, `--locale` e `--port` aplicam-se a `dev` e `start`; `build` também aceita a seleção de implementação, tema e locale. Reiniciar após alterar a configuração. Para disponibilizar o comando curto `dashy`, executar `bun link` e garantir que o diretório de executáveis do Bun está no PATH.
 
 ## Configuração do projeto
 
-Exportar `defineProject({...})`, importado de `./core/project` numa configuração na raiz. Ajustar o caminho do import quando a configuração estiver noutra pasta.
+Usar `import { defineProject } from "dashy"` para uma definição completa. Numa implementação com registos externos, usar `defineConfig` do mesmo módulo: preenche os registos omitidos com `{}` e adia a validação de referências até à composição. Os imports relativos existentes para `core/project` continuam suportados.
 
 - `name`: nome da aplicação apresentado abaixo da marca fixa Dashy.
 - `description`: descrição opcional.
 - `dataDir`: diretório dos dados, relativo ao ficheiro de configuração; por omissão, a pasta desse ficheiro.
-- `locale`: formatação de números, moedas e datas. Prioridade: `--locale`, configuração do projeto, `pt`.
+- `locale`: formatação de números, moedas e datas. Prioridade: `--locale`, `DASHY_LOCALE`, configuração do projeto, `pt`.
 - `theme`: tema e cantos dos controlos.
 - `params`, `sources`, `queries`, `metrics`, `datasets`, `dashboards`: registos obrigatórios, mesmo quando vazios (`{}`).
+- `pages`: registo opcional de páginas, também carregado de `extensions/index.ts`.
 - `adapters`: adapters de fontes adicionais, executados no servidor.
 - `authenticate(request)`: integração opcional com a autenticação da aplicação.
 
 Os nomes dos registos começam por uma letra e contêm letras, números, `_` ou `-`. São identificadores estáveis usados nas referências e nos endpoints; `label` é o texto apresentado ao utilizador.
 
-Para projetos maiores, separar `queries.ts`, `datasets.ts`, `metrics.ts` e `dashboards.ts`, exportando objetos tipados com os contratos de `core/types.ts` e compondo-os no `dashy.config.ts`. Os imports locais são incluídos no bundle da configuração. Manter dados e regras da organização nesses módulos.
+Para projetos maiores, separar `queries.ts`, `datasets.ts`, `metrics.ts` e `dashboards.ts`, exportando objetos tipados com os contratos de `dashy/types` e compondo-os no `dashy.config.ts`. Os imports locais são incluídos no bundle da configuração. Manter dados e regras da organização nesses módulos.
 
 ## Exemplo completo
 
@@ -102,8 +106,8 @@ date,region,revenue,order_id
 Usar esta configuração em `dashy.config.ts` na raiz:
 
 ```ts
-import { defineProject } from "./core/project";
-import type { Format, QueryContext } from "./core/types";
+import { defineProject } from "dashy";
+import type { Format, QueryContext } from "dashy/types";
 
 const money: Format = { style: "currency", currency: "AOA", decimals: 2 };
 
@@ -253,7 +257,7 @@ Um dataset declara as colunas visíveis. Essa seleção controla a apresentaçã
 
 Os formatos são `number`, `currency`, `percent`, `text` e `date`, com `decimals` opcional. Configurar o formato da coluna para tabelas e o da série para os valores do tooltip. Percentagens usam frações: `0.25` corresponde a 25%. `currency` define explicitamente a moeda, por exemplo `AOA`, `EUR` ou `USD`; se o estilo for `currency` e a moeda estiver omitida, usa USD. `locale` controla a apresentação, não converte moedas nem traduz os textos da interface. A formatação de datas usa UTC.
 
-Os dashboards têm uma grelha de 12 colunas, com `width` entre 1 e 12, e adaptação a ecrãs pequenos. Cada bloco tem um `id` único no dashboard. Um bloco dataset pode definir `view: "table"`. A rota deriva do nome do registo: `/dashboards/<nome>`; `/` abre o primeiro dashboard autorizado.
+Os dashboards têm uma grelha de 12 colunas, com `width` entre 1 e 12, e adaptação a ecrãs pequenos. Cada bloco tem um `id` único no dashboard. Um bloco dataset pode definir `view: "table"`. A rota deriva do nome do registo: `/dashboards/<nome>`; `/` abre o primeiro dashboard autorizado, ou a primeira página autorizada quando não existem dashboards visíveis.
 
 `group` agrupa dashboards na navegação pela ordem de declaração. Por omissão, o grupo é `Dashboards` e o ícone é `layout-dashboard`. Os ícones são nomes kebab-case da seleção Lucide suportada em [core/icons.ts](core/icons.ts), como `chart-line`, `users`, `store` e `database`. Um ícone `chart-pie` na navegação não acrescenta suporte a gráficos circulares.
 
@@ -288,7 +292,7 @@ Alguns números DuckDB são strings na API para preservar a representação exat
 
 Os samples são públicos. Para uma solução privada, definir `authenticate(request)` no projeto e integrar a sessão ou o fornecedor de identidade da aplicação. Pode ser assíncrono; devolve `{ roles: [...] }` para um utilizador autenticado ou `null` para negar acesso. O hook protege páginas, catálogo e endpoints de dados.
 
-Queries, métricas, datasets e dashboards aceitam `roles`. Uma lista não vazia exige pelo menos uma role correspondente. O acesso tem de ser permitido em cada nível utilizado. Sem roles, esse artefacto não acrescenta uma restrição. Proteger a query quando os próprios dados são privados: restringir apenas um dashboard não restringe o endpoint direto da query. Grupos de navegação não concedem permissões. As roles restringem artefactos, sem implementar isolamento automático por linha ou tenant.
+Queries, métricas, datasets, dashboards e páginas aceitam `roles`. Uma lista não vazia exige pelo menos uma role correspondente. O acesso tem de ser permitido em cada nível utilizado. Sem roles, esse artefacto não acrescenta uma restrição. Proteger a query quando os próprios dados são privados: restringir apenas um dashboard não restringe o endpoint direto da query. Grupos de navegação não concedem permissões. As roles restringem artefactos, sem implementar isolamento automático por linha ou tenant.
 
 Configurações e builders são código de confiança executado no servidor. Autenticação e credenciais ficam nesse lado. Os pedidos HTTP apenas escolhem artefactos registados e valores de parâmetros; não existe um endpoint de SQL arbitrário.
 
@@ -305,7 +309,7 @@ bun run check:build
 
 Os testes existentes validam o motor e os samples; acrescentar verificações dos resultados e regras específicas da nova solução. `check:build` executa o pacote fora da árvore de código e verifica os cenários incluídos; não substitui a validação dos dados da implementação. Para investigar desempenho, usar `bun scripts/benchmark.ts` e os critérios em `docs/performance.md`.
 
-O build cria `.output/` com servidor, assets, CLI, configuração da raiz e samples. A configuração e os imports locais são compilados. Os dados dos samples são copiados; os dados próprios da configuração da raiz devem ser colocados explicitamente no `dataDir` correspondente dentro do deployment, ou num caminho absoluto acessível. Dependências externas adicionais usadas pela configuração/adapters também têm de estar disponíveis. Os bindings nativos DuckDB devem corresponder ao sistema operativo e à arquitetura de destino.
+O build cria `.output/` com servidor, assets, CLI, manifesto de páginas, configuração da implementação selecionada e samples. Compila a configuração, registos, helpers e componentes. Copia os ficheiros locais registados nas fontes nativas com caminhos relativos para `.output/data/`; os caminhos absolutos continuam externos. Caminhos relativos que saem de `dataDir` são rejeitados no empacotamento. Dependências JavaScript da configuração são incluídas no bundle; dependências nativas adicionais dos adapters exigem preparação própria no deployment. Os bindings nativos DuckDB devem corresponder ao sistema operativo e à arquitetura de destino.
 
 Na máquina de destino, com Bun instalado, executar dentro de `.output/`:
 
@@ -316,3 +320,128 @@ bun dashy.mjs start --with-sample maven-analytics --theme excel
 ```
 
 Alterações ao renderer/motor exigem novo build. Ao distribuir alterações da configuração TypeScript da árvore de código, reconstruir o pacote para atualizar a configuração compilada. Uma configuração de runtime autocontida no deployment pode ser alterada com reinício; selecionar outro sample, tema ou locale no arranque não exige reconstruir o servidor.
+
+## Implementações externas e variáveis de ambiente
+
+Separar a instalação do motor e a aplicação permite atualizar o Dashy sem sobrescrever definições próprias:
+
+```text
+/opt/dashy/                         # Motor e ferramentas
+/srv/minha-aplicacao/
+  dashy.config.ts                   # Identidade, tema, locale, autenticação
+  artifacts/index.ts               # Export default com os registos
+  extensions/index.ts              # Export default com as páginas
+  extensions/pages/customer.tsx    # Componentes e imports locais
+  data/orders.csv
+  package.json
+```
+
+`artifacts/index.ts` exporta um objeto `Partial<ArtifactRegistries>` com `params`, `sources`, `queries`, `metrics`, `datasets` e/ou `dashboards`. Pode importar outros ficheiros. Os registos são combinados com os da configuração; um identificador repetido no mesmo registo é um erro. Referências entre registos são validadas depois da composição. `extensions/index.ts` exporta `Record<string, PageDefinition>`. Os dois índices também podem usar `.js` ou `.mjs`, procurados depois de `.ts`. Não há descoberta recursiva de módulos.
+
+| Variável | Valor por omissão e resolução |
+| --- | --- |
+| `DASHY_PROJECT_DIR` | Pasta da implementação. Se relativo, resolve contra a pasta de invocação. |
+| `DASHY_CONFIG` | `dashy.config.ts`, `.js` ou `.mjs` dentro da implementação. Um caminho relativo resolve contra `DASHY_PROJECT_DIR`, ou contra a pasta de invocação se este não estiver definido. Com apenas `DASHY_CONFIG`, a pasta do ficheiro passa a ser a raiz da implementação. |
+| `DASHY_ARTIFACTS_DIR` | `artifacts` dentro da implementação; pode apontar para outra pasta. |
+| `DASHY_EXTENSIONS_DIR` | `extensions` dentro da implementação; pode apontar para outra pasta. |
+| `DASHY_DATA_DIR` | Substitui `dataDir`. Relativo à raiz da implementação; sem override, `dataDir` continua relativo ao ficheiro de configuração. |
+| `DASHY_THEME` | Substitui o tema e usa os cantos por omissão desse tema. |
+| `DASHY_LOCALE` | Substitui o locale da configuração. O default final é `pt`. |
+
+Caminhos absolutos são aceites em todas as variáveis de localização. Os caminhos relativos de artefactos e extensões resolvem contra a raiz da implementação. Os índices convencionais são opcionais; uma variável explícita para uma pasta sem índice é um erro. Um ficheiro de configuração inexistente nunca provoca fallback silencioso.
+
+A precedência de apresentação é opção CLI explícita, variável de ambiente, configuração, default. `--with-sample` seleciona a pasta do sample e ignora os overrides externos de configuração, artefactos, extensões e dados; tema e locale continuam a poder ser substituídos. O CLI procura samples na pasta atual se contiver `samples/`, ou na instalação.
+
+As variáveis são lidas do ambiente do processo. Para guardar tudo fora do motor num `.env`, passá-lo ao Bun explicitamente:
+
+```sh
+bun --env-file=/srv/minha-aplicacao/.env /opt/dashy/bin/dashy.ts dev
+```
+
+O `.env` pode definir `DASHY_PROJECT_DIR=/srv/minha-aplicacao`, tema, locale e os caminhos específicos. Não usar o prefixo `VITE_` para credenciais, pois esse prefixo destina-se a valores acessíveis ao browser.
+
+## Criar e executar uma aplicação independente
+
+O exemplo em `examples/external-application` contém um dashboard de vendas, uma página Customer 360 e um CSV com totais conhecidos. Copiá-lo para a pasta da aplicação. Criar nessa pasta um `package.json` com `{ "private": true, "type": "module" }` e instalar a API pública e o runtime Solid compatível:
+
+```sh
+# Dentro da pasta da aplicação, com o Dashy instalado em /opt/dashy:
+bun add /opt/dashy solid-js@2.0.0-rc.16 @solidjs/web@2.0.0-rc.16
+
+# Estes comandos podem ser invocados de qualquer pasta:
+export DASHY_PROJECT_DIR=/srv/minha-aplicacao
+bun /opt/dashy/bin/dashy.ts dev --port 3000
+bun /opt/dashy/bin/dashy.ts build
+bun /opt/dashy/bin/dashy.ts start --port 3000
+```
+
+A dependência local torna `dashy`, `dashy/types` e `dashy/ui` disponíveis para imports e para o editor. Usar versões de Solid compatíveis com o `package.json` do motor. O build resolve a API de UI e o runtime Solid da instalação do Dashy, evitando instâncias distintas nos componentes da aplicação. Para typecheck próprio, usar TypeScript com `moduleResolution: "Bundler"`, `jsx: "preserve"`, `jsxImportSource: "@solidjs/web"`, `strict: true`, `skipLibCheck: true`, `noEmit: true`, `allowImportingTsExtensions: true` e bibliotecas `ES2022`, `DOM`, `DOM.Iterable`.
+
+`build` escreve na `.output/` da instalação. Esse output corresponde a uma implementação de cada vez. Guardar/copiar o resultado antes de construir outra aplicação. O build não modifica a pasta da aplicação.
+
+## Contrato das páginas personalizadas
+
+Exemplo de `extensions/index.ts`:
+
+```ts
+import type { PageDefinition } from "dashy/types";
+
+export default {
+  customer: {
+    label: "Cliente 360",
+    description: "Informação do cliente selecionado",
+    icon: "users",
+    group: "Clientes",
+    params: ["customer"],
+    defaults: { customer: 1 },
+    component: "pages/customer.tsx",
+    // roles: ["commercial"],
+  },
+} satisfies Record<string, PageDefinition>;
+```
+
+O parâmetro `customer` tem de existir no registo global. A rota será `/pages/customer`. O componente é um caminho relativo `.tsx` ou `.jsx` dentro de `extensions`; caminhos absolutos, `..` e symlinks que saiam dessa pasta são rejeitados. O componente exporta uma função Solid por omissão. Os seus imports locais, CSS e assets importados entram no build.
+
+As props públicas `PageProps`, importadas de `dashy/ui`, contêm:
+
+- `page`: identificador, metadados da página e parâmetros validados.
+- `params`: os mesmos parâmetros, depois dos defaults e da validação.
+- `catalog`: catálogo autorizado, incluindo tema, definições dos parâmetros e navegação.
+- `locale`: locale efetivo da aplicação.
+
+Dashy fornece título, descrição, branding, sidebar e layout responsivo. A página implementa o seu conteúdo e formulários. Um formulário GET para a rota atual volta a validar os parâmetros no servidor. A prioridade dos valores é pedido, `page.defaults`, `parameter.default`; parâmetros desconhecidos são rejeitados.
+
+`dashy/ui` exporta `fetchDataset(name, params, signal?)`, `fetchMetric(name, params, signal?)`, `paramsSearch(params)`, `formatValue` e `Spinner`. Os pedidos usam a sessão da mesma origem. `fetchDataset` devolve `QueryResult`; `fetchMetric` devolve `{ value }`. Erros HTTP rejeitam a Promise. Enviar apenas os parâmetros aceites pela query subjacente. Arrays usam chaves repetidas; ranges usam `.from` e `.until`. Passar `null` ou uma lista vazia para limpar explicitamente um filtro opcional.
+
+Iniciar pedidos no browser com `onSettled`, mostrar o estado de carregamento e erro, e cancelar com `AbortController` no cleanup ou antes de substituir um pedido. O [componente Customer 360](examples/external-application/extensions/pages/customer.tsx) mostra esse ciclo completo, incluindo repetição e resultado vazio. A página é renderizada no servidor antes de o browser carregar os seus dados. Os helpers de páginas não fazem deduplicação automática; partilhar o resultado no componente quando vários elementos usam o mesmo pedido. A deduplicação dos dashboards mantém-se.
+
+Usar as classes comuns `button primary`, `button secondary`, `filters`, `filter-field` e `block` para os controlos seguirem o tema. `filter-field` envolve o label e o input/select. CSS específico pode usar as variáveis dos temas, mantendo estilos locais ao componente.
+
+As permissões da página são verificadas no servidor antes de renderizar o componente. A página não concede acesso adicional às queries. O catálogo omite páginas não autorizadas e caminhos dos componentes. Os ficheiros JavaScript/CSS compilados são assets públicos: manter credenciais, autenticação, sources e builders nos módulos de servidor. Importar `dashy/ui` e tipos em componentes; importar `dashy` em configuração e artefactos do servidor.
+
+## Desenvolvimento, distribuição e atualização
+
+Em desenvolvimento, alterações a componentes e CSS em `extensions` atualizam o browser. Reiniciar o processo depois de alterar configuração, registos de artefactos ou `extensions/index.ts`, incluindo novas páginas. A configuração externa é importada pelo runtime Bun e não é publicada através do acesso a ficheiros do Vite.
+
+Em produção há duas formas de execução:
+
+- **Configuração externa:** manter `DASHY_PROJECT_DIR` ou `DASHY_CONFIG` no ambiente. O servidor carrega a configuração e os artefactos dessa localização; as páginas usam os componentes do build. Manter instaladas as dependências dos módulos externos.
+- **Pacote autónomo:** copiar `.output/`, remover os overrides `DASHY_*` de localização e executar `bun /caminho/deployment/dashy.mjs start`. Usa a configuração e os dados relativos empacotados. Não requer a pasta original da aplicação. Fontes absolutas e integrações externas continuam a exigir os respetivos recursos.
+
+Alterar tema, locale ou artefactos externos exige reinício. Alterar componentes, CSS ou o registo de componentes exige build e reinício. O CLI verifica o manifesto antes de iniciar: uma página nova ou um caminho de componente diferente produz a indicação de reconstruir o build. Edições no conteúdo de um componente já registado também exigem build, embora não alterem esse manifesto.
+
+Para atualizar o motor: preservar a pasta da aplicação, instalar a versão pretendida do Dashy e as suas dependências, atualizar a dependência local da aplicação quando necessário, construir com `DASHY_PROJECT_DIR` e testar o resultado antes de substituir o deployment. Os componentes ficam compilados para essa versão do motor; uma atualização do motor exige reconstrução.
+
+Verificações da plataforma:
+
+```sh
+bun test
+bun run typecheck
+bun run check:extensions
+bun run build
+bun run check:build
+```
+
+`check:extensions` constrói uma cópia temporária do exemplo fora do repositório e verifica arranque noutra pasta, preservação da configuração, SSR, assets, autenticação, roles, parâmetros, APIs protegidas, mudanças de tema/locale e diagnóstico de páginas não compiladas. Também elimina a implementação temporária e verifica o pacote autónomo. Escreve `.output/` com o fixture de teste; executar depois `build` para repor a implementação pretendida. `check:build` verifica a configuração inicial vazia e os samples existentes, pelo que deve correr depois de um build sem seleção externa.
+
+No browser, abrir `/pages/customer?customer=1`: devem aparecer Notebook e Keyboard, com 12,5 EUR e 45 EUR. Selecionar o cliente 2 mostra apenas Monitor, com 210 EUR. Verificar navegação para Sales, filtros, Reload orders, caso sem encomendas, estados de espera/erro e layout móvel.

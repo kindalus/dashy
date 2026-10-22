@@ -57,7 +57,7 @@ dashy start --with-sample maven-analytics
 dashy dev --with-sample source-examples --port 3001
 ```
 
-Run commands from the project root. Production requires a build; sample selection
+Run these commands from the project root, or invoke the CLI by its absolute path with `DASHY_PROJECT_DIR` for an external implementation. Production requires a build; sample selection
 happens at runtime, so changing samples does not require rebuilding. Config edits
 require restarting the server. `--port` chooses the listening port.
 
@@ -71,7 +71,7 @@ bun run start --with-sample maven-analytics --locale pt-AO
 bun dashy.mjs start --locale en
 ```
 
-Precedence is `--locale`, then the project's `locale`, then `pt`. The option
+Precedence is `--locale`, `DASHY_LOCALE`, the project's `locale`, then `pt`. The option
 formats numbers, currencies and dates; it does not translate interface text
 or change currencies. Invalid language tags fail before the server starts.
 
@@ -82,12 +82,37 @@ bun dashy.mjs start
 bun dashy.mjs start --with-sample maven-analytics
 ```
 
-The output includes the CLI, bundled project and sample configurations, and sample
-data. For your own project, deploy its source files at the configured `dataDir`
-and provide any third-party packages imported by its runtime config. Native
+The output includes the CLI, page manifest, bundled selected configuration and
+artifacts, compiled custom pages, samples and registered relative source files.
+Absolute sources stay external. Runtime configurations kept outside the build
+need their own installed dependencies. Native
 DuckDB bindings must match the deployment OS and architecture.
 `check:build` runs this deployment in isolation and checks the empty workspace,
 both samples, runtime discovery, SSR, assets, filters and missing-sample errors.
+
+## External implementations and custom pages
+
+Keep your implementation outside the Dashy installation:
+
+```sh
+export DASHY_PROJECT_DIR=/srv/my-application
+bun /opt/dashy/bin/dashy.ts dev
+bun /opt/dashy/bin/dashy.ts build
+bun /opt/dashy/bin/dashy.ts start
+```
+
+The implementation contains `dashy.config.ts`, `artifacts/index.ts`, and
+`extensions/index.ts` with custom Solid pages under `extensions/`.
+`DASHY_CONFIG`, `DASHY_ARTIFACTS_DIR`, `DASHY_EXTENSIONS_DIR` and `DASHY_DATA_DIR`
+override individual paths. `DASHY_THEME` and `DASHY_LOCALE` override presentation.
+Pages share the workspace, icons, navigation groups and authentication, and appear
+at `/pages/:id`. Page components and styles require a build; external server
+configuration and artifacts can change with a restart.
+
+See [the complete setup and page contract](llms.txt#implementações-externas-e-variáveis-de-ambiente)
+and the runnable [external application example](examples/external-application/).
+`bun run check:extensions` tests an independent implementation and a portable build;
+run your intended build again afterward, since the check writes `.output/`.
 
 ## Define your project
 
@@ -153,7 +178,7 @@ Icons use Lucide 1.61.0 with named imports. Its license notices ship at `public/
 
 ## Access control
 
-The included samples are public. A private project provides `authenticate(request)` in its configuration. Return `{ roles: [...] }` for an authenticated request or `null` to deny access. Integrate your existing session or identity provider there. The hook protects SSR, the catalog and all API endpoints. Queries, metrics, datasets and dashboards can each declare roles; access requires a match at every level used. No login pages or organization-specific roles are built into the engine.
+The included samples are public. A private project provides `authenticate(request)` in its configuration. Return `{ roles: [...] }` for an authenticated request or `null` to deny access. Integrate your existing session or identity provider there. The hook protects SSR, the catalog and all API endpoints. Queries, metrics, datasets, dashboards and custom pages can each declare roles; access requires a match at every level used. No login pages or organization-specific roles are built into the engine.
 
 Project files and SQL builders are trusted server code. HTTP parameters are untrusted, validated and bound separately from SQL. Do not interpolate user values into SQL or let requests choose file paths. Source databases are opened read-only. See [source limits](docs/sources.md) before loading large files.
 
