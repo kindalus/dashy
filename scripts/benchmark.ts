@@ -14,13 +14,13 @@ const cases: Record<string, () => Promise<void> | void> = {
       length += formatValue(i / 100, {
         style: "currency",
         currency: "EUR",
-      }).length;
+      }, "en-GB").length;
     assert.equal(length, 57800);
   },
   "format-dates": () => {
     let length = 0;
     for (let i = 0; i < 10_000; i++)
-      length += formatValue("2026-01-15", { style: "date" }).length;
+      length += formatValue("2026-01-15", { style: "date" }, "en-GB").length;
     assert.equal(length, 110000);
   },
   "import-rows": async () => {
@@ -76,6 +76,20 @@ const cases: Record<string, () => Promise<void> | void> = {
       Array.from({ length: 4 }, () => engine.dashboard("overview")),
     );
     assert.ok(results.every((r) => r.blocks.every((b) => b.type !== "error")));
+  },
+  "maven-independent": async () => {
+    const engine = new DashyEngine(
+      await loadProject("samples/maven-analytics/dashy.config.ts"),
+    );
+    const shell = engine.dashboardShell("overview");
+    const results = await Promise.all(shell.requests.map(({ id }) =>
+      engine.dashboardData("overview", id, shell.params),
+    ));
+    const blocks = results.flatMap((result) => result.blocks);
+    assert.equal(blocks.length, shell.definition.blocks.length);
+    assert.ok(blocks.every((block) => block.type !== "error"));
+    const revenue = blocks.find((block) => block.id === "revenue");
+    assert.equal(revenue?.type === "metric" && Number(revenue.value), 55755479.59);
   },
 };
 const names = process.argv.slice(2);

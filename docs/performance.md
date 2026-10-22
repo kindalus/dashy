@@ -130,3 +130,23 @@ Further changes considered but not implemented:
 No remaining change was justified by the reviewed architecture and measured
 workloads. Larger data, higher request concurrency or new chart types should
 start a new measurement cycle rather than assuming these local results apply.
+
+## Independent-loading review, 2026-10-22
+
+Branch: `refactor/query-and-render-performance`, starting at `a10c070`.
+The benchmark now explicitly uses `en-GB` for its historic formatter workloads,
+so changing the application's default locale does not invalidate the fixed
+output assertions. `maven-independent` exercises the browser's current request
+plan: parallel groups, with shared-query blocks in one group. It checks all
+blocks and the revenue total. The aggregate API remains a separate workload.
+
+Baseline medians from five samples after one warm-up:
+
+| Workload | Median ms | Range ms |
+| --- | ---: | --- |
+| Format 10,000 numbers | 4.16 | 4.08–4.18 |
+| Format 10,000 dates | 4.05 | 3.92–4.53 |
+| Import 10,000 rows | 107.19 | 103.38–117.11 |
+| Maven aggregate dashboard | 729.54 | 717.17–734.58 |
+| Four concurrent aggregate dashboards | 740.14 | 738.92–741.99 |
+| Maven independent requests | 312.12 | 310.13–313.23 |
