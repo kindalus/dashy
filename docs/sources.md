@@ -37,6 +37,11 @@ For imported SQLite/Excel columns, set explicit types when inference is insuffic
 
 Supported explicit types are `VARCHAR`, `DOUBLE`, `BIGINT`, `BOOLEAN`, `DATE` and `TIMESTAMP`. Without overrides, imported numeric columns become `DOUBLE`, boolean columns become `BOOLEAN`, and mixed/text columns become `VARCHAR`. Native CSV/JSON/Parquet readers perform their own type inference.
 
+SQLite, Excel and custom `mountRows` imports use DuckDB's native appender.
+Values are passed as data and DuckDB applies the target column conversions.
+Imports yield to the event loop every 2,048 rows and close the appender even if
+a conversion fails.
+
 ## Add a source adapter
 
 An adapter mounts a table or view on the supplied DuckDB connection. It runs once per source per request; multiple queries within an aggregate dashboard request reuse that mount. Independent browser requests mount their sources separately. It owns format-specific reading; the engine still handles queries, parameters, permissions and responses.

@@ -150,3 +150,22 @@ Baseline medians from five samples after one warm-up:
 | Maven aggregate dashboard | 729.54 | 717.17–734.58 |
 | Four concurrent aggregate dashboards | 740.14 | 738.92–741.99 |
 | Maven independent requests | 312.12 | 310.13–313.23 |
+
+### Native row import
+
+Replaced prepared INSERT batches with DuckDB's native appender, using the
+installed Node API's `createAppender`, typed append methods and `closeSync`.
+DuckDB still performs conversions to the declared target columns. Text stays
+data, including SQL-looking strings and embedded NUL characters. The importer
+yields every 2,048 rows so other requests and timers can run; the existing
+100,000-row limit remains. The appender closes in `finally` on both success
+and conversion failures.
+
+The same 10,000-row benchmark improved from **107.19 ms (103.38–117.11)** to
+**10.83 ms (10.63–11.59)**. A second run measured **11.10 ms (10.66–11.54)**.
+Keep: approximately 90% less import time and less statement/batch management.
+Tests cross native chunk boundaries, preserve exact BIGINT strings, safe
+numeric integers, timestamps, nulls and mixed values, and verify that failed
+conversions reject while leaving the connection usable.
+
+Reference: [DuckDB Node API appender documentation](https://github.com/duckdb/duckdb-node-neo/blob/main/api/pkgs/%40duckdb/node-api/README.md#append-to-table).

@@ -16,7 +16,7 @@ async function withConnection(
   }
 }
 
-test("imports multiple batches and their remainder with exact types, nulls and bound text", async () => {
+test("imports exact types, nulls and SQL-looking text as data", async () => {
   await withConnection(async (connection) => {
     const rows: Row[] = Array.from({ length: 601 }, (_, id) => ({
       id,
@@ -53,6 +53,48 @@ test("imports multiple batches and their remainder with exact types, nulls and b
         time_type: "TIMESTAMP",
       });
     }
+  });
+});
+
+test("native import crosses chunk boundaries and preserves numeric, text and timestamp values", async () => {
+  await withConnection(async (connection) => {
+    const rows = Array.from({ length: 4097 }, (_, id) => ({
+      id,
+      safe: Number.MAX_SAFE_INTEGER,
+      precise: "-9223372036854775808",
+      fraction: -1.5,
+      label: "before\u0000after 🦆",
+      flag: "true",
+      timestamp: "2026-02-15 12:34:56.123456",
+    }));
+    await mountRows(connection, "chunks", rows, Object.keys(rows[0]!), {
+      id: "BIGINT", safe: "BIGINT", precise: "BIGINT", fraction: "BIGINT",
+      flag: "BOOLEAN", timestamp: "TIMESTAMP",
+    });
+    const result = (await connection.runAndReadAll(
+      "SELECT *, count(*) OVER () AS total FROM chunks ORDER BY id DESC LIMIT 1",
+    )).getRowObjectsJson();
+    expect(result).toEqual([{
+      id: "4096", total: "4097", safe: "9007199254740991",
+      precise: "-9223372036854775808", fraction: "-2", flag: true,
+      label: "before\u0000after 🦆", timestamp: "2026-02-15 12:34:56.123456",
+    }]);
+  });
+});
+
+test("failed native conversions reject and leave the connection usable", async () => {
+  await withConnection(async (connection) => {
+    for (const [name, value, type] of [
+      ["bad_date", "not-a-date", "DATE"],
+      ["bad_number", "9223372036854775808", "BIGINT"],
+      ["bad_bool", "perhaps", "BOOLEAN"],
+    ] as const) {
+      await expect(mountRows(connection, name, [{ first: 1, value }],
+        ["first", "value"], { value: type })).rejects.toThrow();
+    }
+    await mountRows(connection, "good", [{ value: 42 }], ["value"]);
+    expect((await connection.runAndReadAll("SELECT * FROM good")).getRowObjectsJson())
+      .toEqual([{ value: 42 }]);
   });
 });
 

@@ -1,9 +1,7 @@
 import { resolve } from "node:path";
 import { stat } from "node:fs/promises";
-import type {
-  DuckDBConnection,
-  DuckDBPreparedStatement,
-} from "@duckdb/node-api";
+import type { DuckDBConnection } from "@duckdb/node-api";
+import { setImmediate } from "node:timers/promises";
 import type { SourceDefinition, Row } from "./types";
 import { identifier, literal } from "./sql";
 
@@ -61,40 +59,25 @@ export async function mountRows(
   await connection.run(
     `CREATE TEMP TABLE ${identifier(name)} (${columns.map((column, i) => `${identifier(column)} ${resolvedTypes[i]}`).join(", ")})`,
   );
-  // Bound batches retain DuckDB's casts while avoiding one asynchronous insert
-  // per row. Cap both rows and placeholders to keep wide imports bounded.
-  const batchSize = Math.max(
-    1,
-    Math.min(256, Math.floor(2048 / columns.length)),
-  );
-  const placeholders = `(${columns.map(() => "?").join(", ")})`;
-  let statement: DuckDBPreparedStatement | undefined;
-  let preparedRows = 0;
+  // The native appender retains DuckDB's casts without preparing INSERT SQL.
+  const appender = await connection.createAppender(name);
   try {
-    for (let offset = 0; offset < rows.length; offset += batchSize) {
-      const batch = rows.slice(offset, offset + batchSize);
-      if (preparedRows !== batch.length) {
-        statement?.destroySync();
-        statement = undefined;
-        statement = await connection.prepare(
-          `INSERT INTO ${identifier(name)} VALUES ${Array(batch.length).fill(placeholders).join(", ")}`,
-        );
-        preparedRows = batch.length;
+    for (let offset = 0; offset < rows.length; offset++) {
+      const row = rows[offset]!;
+      for (let i = 0; i < columns.length; i++) {
+        const value = cellValue(row, columns[i]!);
+        if (value === null) appender.appendNull();
+        else if (resolvedTypes[i] === "VARCHAR") appender.appendVarchar(String(value));
+        else if (typeof value === "number") appender.appendDouble(value);
+        else if (typeof value === "boolean") appender.appendBoolean(value);
+        else appender.appendVarchar(value);
       }
-      statement!.bind(
-        batch.flatMap((row) =>
-          columns.map((column, i) => {
-            const value = cellValue(row, column);
-            return value !== null && resolvedTypes[i] === "VARCHAR"
-              ? String(value)
-              : value;
-          }),
-        ),
-      );
-      await statement!.run();
+      appender.endRow();
+      // Keep imports cooperative with HTTP requests and query timeouts.
+      if ((offset + 1) % 2048 === 0) await setImmediate();
     }
   } finally {
-    statement?.destroySync();
+    appender.closeSync();
   }
 }
 const fileView =
