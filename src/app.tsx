@@ -16,10 +16,14 @@ import type {
   ParamDefinition,
   Params,
   QueryResult,
+  PageShell,
 } from "../core/types";
 import { Chart } from "./chart";
 import { formatValue } from "./format";
-import { Brand, DashboardNavigation } from "./navigation";
+import { Workspace } from "./workspace";
+import { PageContent } from "./page-content";
+import type { Component } from "solid-js";
+import type { PageProps } from "./extension-api";
 import { Spinner } from "./spinner";
 import {
   DashboardLoader, dashboardSearchParams, type DashboardLoads,
@@ -28,8 +32,19 @@ import {
 export interface AppProps {
   catalog: Catalog;
   dashboard: DashboardShell | null;
+  page?: PageShell;
 }
-export function App(props: AppProps) {
+export function App(props: AppProps & { Page?: Component<PageProps> }) {
+  const selected = props.page ? `/pages/${props.page.id}` : props.dashboard ? `/dashboards/${props.dashboard.id}` : undefined;
+  return <Workspace catalog={props.catalog} selected={selected}
+    label={props.page?.definition.label ?? props.dashboard?.definition.label}
+    kind={props.page ? "Pages" : "Dashboards"}>
+    {props.page && props.Page
+      ? <PageContent page={props.page} catalog={props.catalog} component={props.Page} />
+      : <DashboardContent {...props} />}
+  </Workspace>;
+}
+function DashboardContent(props: AppProps) {
   const loader = props.dashboard
     ? new DashboardLoader(props.dashboard, (state) => setLoads(state))
     : undefined;
@@ -92,38 +107,7 @@ export function App(props: AppProps) {
     void load(query);
   }
   return (
-    <div class="workspace">
-      <a class="skip-link" href="#main">
-        Skip to dashboard
-      </a>
-      <aside class="sidebar">
-        <Brand application={props.catalog.name} />
-        <DashboardNavigation
-          catalog={props.catalog}
-          selected={props.dashboard?.id}
-        />
-        <div class="sidebar-footer">
-          <span class="status-dot" />
-          Read-only workspace
-        </div>
-      </aside>
-      <div class="main-column">
-        <header class="topbar">
-          <span class="breadcrumb">
-            Dashboards <span aria-hidden="true">/</span>{" "}
-            <strong>{definition()?.label || "Workspace"}</strong>
-          </span>
-          <div class="mobile-brand">
-            <Brand application={props.catalog.name} />
-          </div>
-          <DashboardNavigation
-            catalog={props.catalog}
-            selected={props.dashboard?.id}
-            mobile
-          />
-          <span class="workspace-badge">{props.catalog.name}</span>
-        </header>
-        <main id="main" tabindex={-1}>
+    <>
           <div class="page-heading">
             <div>
               <h1>{definition()?.label || "Your dashboards"}</h1>
@@ -199,9 +183,7 @@ export function App(props: AppProps) {
               )}
             </For>
           </section>
-        </main>
-      </div>
-    </div>
+    </>
   );
 }
 function DashboardCard(props: {

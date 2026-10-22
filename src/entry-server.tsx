@@ -1,8 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { renderToString, HydrationScript } from "@solidjs/web";
 import { App, type AppProps } from "./app";
-import defaultProject from "../dashy.config";
-import { loadProject } from "../core/runtime";
+import { loadImplementation } from "../core/runtime";
+import { resolveLocations } from "../core/locations";
+import { pages } from "virtual:dashy-pages";
 import { DashyEngine } from "../core/engine";
 import {
   authenticate,
@@ -14,13 +15,11 @@ import { DashyError, readParams } from "../core/params";
 import clientAssets from "./entry-client?assets=client";
 import serverAssets from "./entry-server?assets=ssr";
 
-const project = process.env.DASHY_CONFIG
-  ? await loadProject(
-      process.env.DASHY_CONFIG,
-      process.env.DASHY_THEME || undefined,
-      process.env.DASHY_LOCALE || undefined,
-    )
-  : defaultProject;
+const project = await loadImplementation(await resolveLocations());
+for (const [id, page] of Object.entries(project.pages ?? {})) {
+  if (!Object.hasOwn(pages, id) || pages[id]!.component !== page.component.replace(/^\.\//, ""))
+    throw new Error(`Page '${id}' is not in this build. Rebuild Dashy with the selected implementation.`);
+}
 const engine = new DashyEngine(project);
 const api = createApiHandler(engine);
 /** Nitro's SSR renderer integration, adapted to Solid 2's @solidjs/web exports.
@@ -40,19 +39,22 @@ export default {
         throw new DashyError("Request URL is too long", 414);
       const principal = await authenticate(engine, request);
       const catalog = engine.catalog(principal);
-      const match = /^\/dashboards\/([a-zA-Z][a-zA-Z0-9_-]*)\/?$/.exec(
+      const match = /^\/(dashboards|pages)\/([a-zA-Z][a-zA-Z0-9_-]*)\/?$/.exec(
         url.pathname,
       );
       if (url.pathname !== "/" && !match)
         throw new DashyError("Page not found", 404);
-      const id = match?.[1] || Object.keys(catalog.dashboards)[0];
+      const kind = match?.[1] ?? (Object.keys(catalog.dashboards).length ? "dashboards" : "pages");
+      const id = match?.[2] || Object.keys(kind === "pages" ? catalog.pages ?? {} : catalog.dashboards)[0];
       const raw = readParams(url.searchParams, engine.project.params);
       const props: AppProps = {
         catalog,
-        dashboard: id ? engine.dashboardShell(id, raw, principal) : null,
+        dashboard: id && kind === "dashboards" ? engine.dashboardShell(id, raw, principal) : null,
+        ...(id && kind === "pages" ? { page: engine.pageShell(id, raw, principal) } : {}),
       };
+      const Page = props.page ? (await pages[props.page.id]!.load()).default : undefined;
       const nonce = randomBytes(18).toString("base64");
-      const appHTML = renderToString(() => <App {...props} />, { nonce });
+      const appHTML = renderToString(() => <App {...props} Page={Page} />, { nonce });
       const assets = clientAssets.merge(serverAssets);
       const data = JSON.stringify(props)
         .replaceAll("<", "\\u003c")
@@ -77,8 +79,8 @@ export default {
                 content="width=device-width, initial-scale=1"
               />
               <title>
-                {props.dashboard
-                  ? `${props.dashboard.definition.label} | ${catalog.name}`
+                {props.page || props.dashboard
+                  ? `${(props.page ?? props.dashboard)!.definition.label} | ${catalog.name}`
                   : catalog.name}
               </title>
               <ForAssets assets={assets} />
@@ -103,7 +105,7 @@ export default {
           headers: {
             ...responseHeaders,
             "Content-Type": "text/html; charset=utf-8",
-            "Content-Security-Policy": `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'${import.meta.env.DEV ? " ws: wss:" : ""}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,
+            "Content-Security-Policy": `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'${import.meta.env.DEV ? " ws: wss:" : ""}; worker-src 'self'${import.meta.env.DEV ? " blob:" : ""}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,
           },
         },
       );

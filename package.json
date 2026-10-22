@@ -44,6 +44,8 @@
   },
   "exports": {
     ".": "./core/index.ts",
-    "./types": "./core/types.ts"
+    "./types": "./core/types.ts",
+    "./ui": "./src/extension-api.ts",
+    "./internal/import-config": "./core/import-config.mjs"
   }
 }

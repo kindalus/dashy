@@ -1,6 +1,6 @@
 import { dirname, resolve } from "node:path";
 import { stat } from "node:fs/promises";
-import { findConfig, selectConfig } from "./discovery";
+import { findConfig, selectConfig } from "./discovery.ts";
 
 export interface ProjectLocations {
   projectDir: string;

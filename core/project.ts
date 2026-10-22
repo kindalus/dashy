@@ -1,6 +1,6 @@
-import type { ProjectDefinition, ProjectConfig } from "./types";
-import { dashboardIconNames } from "./icons";
-import { resolveTheme } from "./theme";
+import type { ProjectDefinition, ProjectConfig } from "./types.ts";
+import { dashboardIconNames } from "./icons.ts";
+import { resolveTheme } from "./theme.ts";
 
 export function defineProject<const T extends ProjectDefinition>(
   project: T,

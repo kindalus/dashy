@@ -1,6 +1,6 @@
 import { createMemo, For, Show } from "solid-js";
 import type { Catalog } from "../core/types";
-import { groupDashboards } from "../core/navigation";
+import { groupNavigation } from "../core/navigation";
 import { Icon } from "./icons";
 
 export function Brand(props: { application: string }) {
@@ -22,22 +22,22 @@ export function DashboardNavigation(props: {
   selected?: string;
   mobile?: boolean;
 }) {
-  const groups = createMemo(() => groupDashboards(props.catalog.dashboards));
+  const groups = createMemo(() => groupNavigation(props.catalog));
   return (
     <Show
       when={props.mobile}
       fallback={
-        <nav class="dashboard-nav" aria-label="Dashboards">
+        <nav class="dashboard-nav" aria-label="Workspace navigation">
           <For each={groups()}>
             {(group) => (
               <section class="nav-group" aria-label={group.label}>
                 <h2 class="nav-label">{group.label}</h2>
-                <For each={group.dashboards}>
-                  {([id, dashboard]) => (
+                <For each={group.entries}>
+                  {({ href, definition: dashboard }) => (
                     <a
                       class="nav-item"
-                      aria-current={props.selected === id ? "page" : undefined}
-                      href={`/dashboards/${encodeURIComponent(id)}`}
+                      aria-current={props.selected === href ? "page" : undefined}
+                      href={href}
                     >
                       <Icon name={dashboard.icon} />
                       <span>{dashboard.label}</span>
@@ -52,22 +52,22 @@ export function DashboardNavigation(props: {
     >
       <Show when={groups().length > 0}>
         <label class="mobile-nav">
-          Dashboard
+          Page
           <select
             name="dashboard"
             autocomplete="off"
-            aria-label="Choose dashboard"
+            aria-label="Choose page"
             value={props.selected || ""}
             onChange={(event) => {
-              location.href = `/dashboards/${encodeURIComponent(event.currentTarget.value)}`;
+              location.href = event.currentTarget.value;
             }}
           >
             <For each={groups()}>
               {(group) => (
                 <optgroup label={group.label}>
-                  <For each={group.dashboards}>
-                    {([id, dashboard]) => (
-                      <option value={id}>{dashboard.label}</option>
+                  <For each={group.entries}>
+                    {({ href, definition: dashboard }) => (
+                      <option value={href}>{dashboard.label}</option>
                     )}
                   </For>
                 </optgroup>

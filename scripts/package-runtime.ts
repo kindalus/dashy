@@ -1,32 +1,57 @@
 import { cp, mkdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { findConfig, listSamples } from "../core/runtime";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import { findConfig, listSamples, loadImplementation } from "../core/runtime";
+import { findRegistry, resolveLocations } from "../core/locations";
 
-// Ship runnable server configurations next to their data. TypeScript helpers are
-// bundled so a deployment does not need the source tree or dev dependencies.
-async function bundle(entry: string, outfile: string) {
+const root = process.cwd();
+const sdk = resolve(root, "core/index.ts");
+
+// Bundle server helpers, including the public SDK. Native adapters stay external
+// and are already copied by Nitro's traceDeps configuration.
+async function bundle(entry: string, outfile: string, code?: string) {
   await mkdir(dirname(outfile), { recursive: true });
   const result = await Bun.build({
-    entrypoints: [entry],
-    target: "bun",
-    packages: "external",
+    entrypoints: [entry], target: "bun",
+    external: ["@duckdb/node-api", "exceljs"],
+    plugins: [{ name: "dashy-runtime-package", setup(build) {
+      build.onResolve({ filter: /^dashy$/ }, () => ({ path: sdk }));
+      build.onResolve({ filter: /^dashy\/internal\/import-config$/ }, () => ({ path: resolve(root, "core/import-config.mjs") }));
+      if (code !== undefined) {
+        build.onResolve({ filter: /^dashy:config$/ }, () => ({ path: "config", namespace: "dashy" }));
+        build.onLoad({ filter: /.*/, namespace: "dashy" }, () => ({ contents: code, loader: "ts", resolveDir: root }));
+      }
+    } }],
   });
-  if (!result.success)
-    throw new AggregateError(result.logs, `Could not bundle ${entry}`);
-  if (result.outputs.length !== 1)
-    throw new Error(`Expected one output for ${entry}`);
+  if (!result.success) throw new AggregateError(result.logs, `Could not bundle ${entry}`);
+  if (result.outputs.length !== 1) throw new Error(`Expected one output for ${entry}`);
   await Bun.write(outfile, result.outputs[0]!);
 }
 
-await bundle("bin/dashy.ts", ".output/dashy.mjs");
-await bundle("dashy.config.ts", ".output/dashy.config.js");
-for (const name of await listSamples(process.cwd())) {
+const locations = await resolveLocations();
+const project = await loadImplementation(locations);
+const artifactPath = await findRegistry(locations.artifactsDir, locations.artifactsRequired);
+const extensionPath = await findRegistry(locations.extensionsDir, locations.extensionsRequired);
+const registries = ["params", "sources", "queries", "datasets", "metrics", "dashboards"];
+const composed = [
+  `import config from ${JSON.stringify(locations.config)};`,
+  artifactPath ? `import artifacts from ${JSON.stringify(artifactPath)};` : "const artifacts = {};",
+  extensionPath ? `import pages from ${JSON.stringify(extensionPath)};` : "const pages = {};",
+  `export default { ...config, ${registries.map(key => `${key}: { ...config.${key}, ...artifacts.${key} }`).join(",")}, pages: { ...config.pages, ...pages }, dataDir: './data', locale: ${JSON.stringify(project.locale)}, theme: ${JSON.stringify(project.theme)} };`,
+].join("\n");
+await bundle(resolve("bin/dashy.ts"), ".output/dashy.mjs");
+await bundle("dashy:config", ".output/dashy.config.js", composed);
+// Copy only registered relative local files. Absolute sources remain external.
+for (const source of Object.values(project.sources)) {
+  if (!["csv", "json", "excel", "sqlite", "duckdb", "parquet"].includes(source.type) || isAbsolute(source.path)) continue;
+  const target = resolve(".output/data", source.path);
+  if (!target.startsWith(resolve(".output/data") + "/")) throw new Error(`Cannot package source outside data directory: ${source.path}. Use an absolute external source path.`);
+  await mkdir(dirname(target), { recursive: true });
+  await cp(resolve(project.dataDir!, source.path), target, { recursive: true });
+}
+for (const name of await listSamples(root)) {
   const source = join("samples", name);
   const target = join(".output/samples", name);
-  await cp(source, target, {
-    recursive: true,
-    filter: (path) => !/\.(?:ts|tsx|js|mjs)$/.test(path),
-  });
+  await cp(source, target, { recursive: true, filter: (path) => !/\.(?:ts|tsx|js|mjs)$/.test(path) });
   await bundle((await findConfig(source))!, join(target, "dashy.config.js"));
 }
-console.log("Packaged runtime CLI, project configuration and samples.");
+console.log("Packaged runtime CLI, selected implementation, relative source files and samples.");

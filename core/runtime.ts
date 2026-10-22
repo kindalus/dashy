@@ -1,10 +1,11 @@
-export { findConfig, listSamples, selectConfig } from "./discovery";
+import { importConfig } from "dashy/internal/import-config";
+export { findConfig, listSamples, selectConfig } from "./discovery.ts";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { defineProject } from "./project";
-import { findRegistry, type ProjectLocations } from "./locations";
-import type { ProjectDefinition } from "./types";
-import { resolveTheme, type ThemeName } from "./theme";
+import { defineProject } from "./project.ts";
+import { findRegistry, type ProjectLocations } from "./locations.ts";
+import type { ProjectDefinition } from "./types.ts";
+import { resolveTheme, type ThemeName } from "./theme.ts";
 
 /** Import trusted server code at runtime, outside Vite's module graph. */
 export async function loadProject(
@@ -14,7 +15,7 @@ export async function loadProject(
   locations?: ProjectLocations,
 ): Promise<ProjectDefinition> {
   const path = resolve(configPath);
-  const module = await import(/* @vite-ignore */ pathToFileURL(path).href);
+  const module = await importConfig(pathToFileURL(path).href);
   if (!module.default || typeof module.default !== "object")
     throw new Error(`Project ${path} must have a default project export.`);
   const base = { ...module.default };
@@ -22,7 +23,7 @@ export async function loadProject(
   if (locations) {
     const artifactPath = await findRegistry(locations.artifactsDir, locations.artifactsRequired);
     if (artifactPath) {
-      const artifacts = (await import(/* @vite-ignore */ pathToFileURL(artifactPath).href)).default;
+      const artifacts = (await importConfig(pathToFileURL(artifactPath).href)).default;
       if (!artifacts || typeof artifacts !== "object" || Array.isArray(artifacts))
         throw new Error(`Artifacts ${artifactPath} must have a default registry export.`);
       for (const key of Object.keys(artifacts))
@@ -32,7 +33,7 @@ export async function loadProject(
     }
     const extensionPath = await findRegistry(locations.extensionsDir, locations.extensionsRequired);
     if (extensionPath) {
-      const pages = (await import(/* @vite-ignore */ pathToFileURL(extensionPath).href)).default;
+      const pages = (await importConfig(pathToFileURL(extensionPath).href)).default;
       if (!pages || typeof pages !== "object" || Array.isArray(pages))
         throw new Error(`Extensions ${extensionPath} must have a default pages export.`);
       base.pages = mergeRegistry("pages", base.pages, pages);

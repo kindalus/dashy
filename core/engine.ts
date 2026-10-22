@@ -14,6 +14,7 @@ import type {
   DashboardBlock,
   DashboardRequest,
   Params,
+  PageShell,
   Principal,
   ProjectDefinition,
   QueryResult,
@@ -53,6 +54,9 @@ export class DashyEngine {
       description: p.description,
       locale: p.locale ?? "pt",
       params: p.params,
+      pages: Object.fromEntries(Object.entries(p.pages ?? {})
+        .filter(([, page]) => canRead(page.roles, principal))
+        .map(([id, { component: _component, ...metadata }]) => [id, metadata])),
       dashboards: Object.fromEntries(
         Object.entries(p.dashboards).filter(([, d]) =>
           canRead(d.roles, principal),
@@ -60,6 +64,14 @@ export class DashyEngine {
       ),
     };
   }
+  pageShell(name: string, raw: Record<string, unknown> = {}, principal?: Principal): PageShell {
+    const page = this.project.pages?.[name];
+    if (!page || !Object.hasOwn(this.project.pages!, name)) throw new DashyError("Page not found", 404);
+    requireRead(page.roles, principal);
+    const { component: _component, ...definition } = page;
+    return { id: name, definition, params: parseParams(this.project.params, page.params ?? [], raw, page.defaults) };
+  }
+
   async query(
     name: string,
     raw: Record<string, unknown> = {},
