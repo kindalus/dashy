@@ -3,6 +3,7 @@ import { renderToString, HydrationScript } from "@solidjs/web";
 import { App, type AppProps } from "./app";
 import { loadImplementation } from "../core/runtime";
 import { resolveLocations } from "../core/locations";
+import { assertCompiledPages } from "../core/pages";
 import { pages } from "virtual:dashy-pages";
 import { DashyEngine } from "../core/engine";
 import {
@@ -16,10 +17,7 @@ import clientAssets from "./entry-client?assets=client";
 import serverAssets from "./entry-server?assets=ssr";
 
 const project = await loadImplementation(await resolveLocations());
-for (const [id, page] of Object.entries(project.pages ?? {})) {
-  if (!Object.hasOwn(pages, id) || pages[id]!.component !== page.component.replace(/^\.\//, ""))
-    throw new Error(`Page '${id}' is not in this build. Rebuild Dashy with the selected implementation.`);
-}
+assertCompiledPages(project, pages);
 const engine = new DashyEngine(project);
 const api = createApiHandler(engine);
 /** Nitro's SSR renderer integration, adapted to Solid 2's @solidjs/web exports.
@@ -55,7 +53,7 @@ export default {
       const Page = props.page ? (await pages[props.page.id]!.load()).default : undefined;
       const nonce = randomBytes(18).toString("base64");
       const appHTML = renderToString(() => <App {...props} Page={Page} />, { nonce });
-      const assets = clientAssets.merge(serverAssets);
+      const assets = clientAssets.merge(serverAssets, ...(props.page ? [pages[props.page.id]!.assets] : []));
       const data = JSON.stringify(props)
         .replaceAll("<", "\\u003c")
         .replaceAll(">", "\\u003e")

@@ -164,6 +164,7 @@ test("CLI lists the filesystem samples and rejects missing names and invalid arg
     ["dev", "--locale"],
     ["samples", "--locale", "en"],
     ["start", "extra"],
+    ["build", "--port", "3000"],
   ])
     expect((await cli(args)).code).toBe(1);
   const noBuild = await cli(["start"]);

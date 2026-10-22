@@ -6,12 +6,15 @@ import type { ProjectDefinition } from "../core/types.ts";
 /** Literal imports let Vite compile external TSX and split each page into a chunk. */
 export async function extensionsPlugin(project: ProjectDefinition, extensionsDir: string): Promise<Plugin> {
   const entries: string[] = [];
+  const assets: string[] = [];
   for (const [id, page] of Object.entries(project.pages ?? {})) {
     const root = await realpath(extensionsDir);
     const path = await realpath(resolve(root, page.component));
     const within = relative(root, path);
     if (within === ".." || within.startsWith(`..${sep}`)) throw new Error(`Page ${id} component escapes extensions`);
-    entries.push(`${JSON.stringify(id)}: { component: ${JSON.stringify(page.component.replace(/^\.\//, ""))}, load: () => import(${JSON.stringify(path)}) }`);
+    const assetName = `pageAssets${assets.length}`;
+    assets.push(`import ${assetName} from ${JSON.stringify(path + "?assets")};`);
+    entries.push(`${JSON.stringify(id)}: { assets: ${assetName}, component: ${JSON.stringify(page.component.replace(/^\.\//, ""))}, load: () => import(${JSON.stringify(path)}) }`);
   }
   return {
     name: "dashy-extensions",
@@ -21,7 +24,7 @@ export async function extensionsPlugin(project: ProjectDefinition, extensionsDir
     },
     configureServer(server) { server.watcher.add(extensionsDir); },
     load(id) {
-      if (id === "\0virtual:dashy-pages") return `export const pages = {${entries.join(",\n")}};`;
+      if (id === "\0virtual:dashy-pages") return `${assets.join("\n")}\nexport const pages = {${entries.join(",\n")}};`;
     },
   };
 }

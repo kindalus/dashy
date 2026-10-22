@@ -1,9 +1,10 @@
 #!/usr/bin/env bun
 import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { listSamples, loadImplementation } from "../core/runtime";
+import { findConfig, listSamples, loadImplementation } from "../core/runtime";
 import { resolveLocations } from "../core/locations";
+import { assertCompiledPages } from "../core/pages";
 import { themeNames } from "../core/theme";
 
 const help = `Usage: dashy <start|dev|build|samples> [--with-sample <name>] [--theme <name>] [--locale <tag>] [--port <number>]
@@ -47,7 +48,9 @@ async function main() {
     throw new Error(help);
   const installation = existsSync(join(import.meta.dir, "dashy.config.js"))
     ? import.meta.dir : resolve(import.meta.dir, "..");
-  const root = process.cwd();
+  const cwd = process.cwd();
+  const root = await findConfig(cwd) ? cwd : installation;
+  const sampleRoot = existsSync(join(cwd, "samples")) ? cwd : installation;
   if (command === "samples") {
     if (
       values["with-sample"] !== undefined ||
@@ -59,7 +62,7 @@ async function main() {
         "The samples command does not accept --with-sample, --theme, --locale or --port.",
       );
     console.log(
-      (await listSamples(root)).join("\n") || "No samples found in ./samples.",
+      (await listSamples(sampleRoot)).join("\n") || "No samples found in ./samples.",
     );
     return;
   }
@@ -70,8 +73,13 @@ async function main() {
       Number(values.port) > 65535)
   )
     throw new Error("--port must be an integer between 1 and 65535.");
+  if (command === "build" && values.port !== undefined)
+    throw new Error("The build command does not accept --port.");
+  if ((command === "dev" || command === "build") && !existsSync(join(installation, "vite.config.ts")))
+    throw new Error("Development and build require a Dashy source installation. Use start with a deployed package.");
   const locations = await resolveLocations({
-    installationDir: process.env.DASHY_PROJECT_DIR ? installation : root,
+    cwd: process.env.DASHY_PROJECT_DIR || process.env.DASHY_CONFIG ? cwd : root,
+    installationDir: sampleRoot,
     sample: values["with-sample"], theme: values.theme, locale: values.locale,
   });
   const { config } = locations;
@@ -117,6 +125,8 @@ async function main() {
       throw new Error(
         "Production build not found. Run bun run build, then dashy start.",
       );
+    const manifest = join(dirname(dirname(entry)), "pages.json");
+    assertCompiledPages(project, existsSync(manifest) ? await Bun.file(manifest).json() : {});
     if (values.port) Object.assign(env, { PORT: values.port });
     args = [process.execPath, entry];
   }

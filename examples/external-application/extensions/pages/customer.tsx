@@ -24,7 +24,10 @@ export default function Customer(props: PageProps) {
   onSettled(() => { void load(); return () => controller?.abort(); });
   return <section class="customer-page" aria-label="Customer details">
     <form class="filters" method="get">
-      <label>Customer<input name="customer" type="number" min="1" step="1" required value={String(props.params.customer ?? 1)} /></label>
+      <div class="filter-field">
+        <label for="customer-id">Customer</label>
+        <input id="customer-id" name="customer" type="number" min="1" step="1" required value={String(props.params.customer ?? 1)} />
+      </div>
       <button class="button primary" type="submit">Open customer</button>
     </form>
     <article class="block customer-orders" aria-busy={loading() ? "true" : "false"}>

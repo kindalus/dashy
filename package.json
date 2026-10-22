@@ -17,7 +17,8 @@
     "typecheck": "bun --bun tsc --noEmit",
     "check:build": "bun scripts/check-build.ts",
     "seed": "bun scripts/seed.ts",
-    "dashy": "bun bin/dashy.ts"
+    "dashy": "bun bin/dashy.ts",
+    "check:extensions": "bun scripts/check-extensions.ts"
   },
   "dependencies": {
     "@duckdb/node-api": "1.5.3-r.1",

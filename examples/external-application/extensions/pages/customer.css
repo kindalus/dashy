@@ -1,3 +1,4 @@
+.customer-page { display: grid; gap: 1.25rem; }
 .customer-orders { padding: 1.5rem; }
 .customer-orders ul { list-style: none; padding: 0; }
 .customer-orders li { display: flex; justify-content: space-between; gap: 1rem; padding: .75rem 0; }

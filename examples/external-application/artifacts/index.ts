@@ -1,7 +1,7 @@
 import type { ArtifactRegistries } from "dashy";
 
 export default {
-  params: { customer: { label: "Customer", type: "number", integer: true, min: 1, default: 1 } },
+  params: { customer: { label: "Customer", type: "number", integer: true, required: true, min: 1, default: 1 } },
   sources: { orders: { type: "csv", path: "orders.csv" } },
   queries: {
     customer_orders: {

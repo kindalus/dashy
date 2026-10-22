@@ -51,3 +51,9 @@ test("page definitions reject unsupported icons, paths, references and malformed
   expect(() => defineProject({ ...project, pages: { bad: { label: "Bad", component: "page.tsx", params: ["missing"] } } })).toThrow("unknown parameter");
   expect(() => defineProject({ ...project, pages: { bad: { label: "Bad", component: "page.tsx", defaults: { customer: 1 } } } })).toThrow("not a page parameter");
 });
+
+test("page validation rejects unknown icons, malformed groups and roles", () => {
+  for (const extra of [{ icon: "unknown" }, { group: " " }, { group: " Customers" }, { roles: "admin" }, { roles: [null] }]) {
+    expect(() => defineProject({ ...project, pages: { bad: { label: "Bad", component: "page.tsx", ...extra } } } as unknown as typeof project)).toThrow();
+  }
+});

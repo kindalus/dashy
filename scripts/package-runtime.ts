@@ -40,6 +40,9 @@ const composed = [
 ].join("\n");
 await bundle(resolve("bin/dashy.ts"), ".output/dashy.mjs");
 await bundle("dashy:config", ".output/dashy.config.js", composed);
+await Bun.write(".output/pages.json", JSON.stringify(Object.fromEntries(
+  Object.entries(project.pages ?? {}).map(([id, page]) => [id, { component: page.component.replace(/^\.\//, "") }]),
+)));
 // Copy only registered relative local files. Absolute sources remain external.
 for (const source of Object.values(project.sources)) {
   if (!["csv", "json", "excel", "sqlite", "duckdb", "parquet"].includes(source.type) || isAbsolute(source.path)) continue;
