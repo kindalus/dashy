@@ -31,13 +31,31 @@ describe("generic engine with real source files", () => {
   }
   test("dashboard filters reach all blocks and shared queries execute once", async () => {
     let count = 0;
-    const counting = new DashyEngine(project, {
-      csv: async (context) => {
-        count++;
-        const { builtInAdapters } = await import("../core/sources");
-        await builtInAdapters.csv!(context);
+    const builds = new Map<string, number>();
+    const counting = new DashyEngine(
+      {
+        ...project,
+        queries: Object.fromEntries(
+          Object.entries(project.queries).map(([name, definition]) => [
+            name,
+            {
+              ...definition,
+              build(context) {
+                builds.set(name, (builds.get(name) || 0) + 1);
+                return definition.build(context);
+              },
+            },
+          ]),
+        ),
       },
-    });
+      {
+        csv: async (context) => {
+          count++;
+          const { builtInAdapters } = await import("../core/sources");
+          await builtInAdapters.csv!(context);
+        },
+      },
+    );
     const result = await counting.dashboard("overview", {
       region: "North",
       period: { from: "2026-01-01", until: "2026-02-28" },
@@ -45,7 +63,8 @@ describe("generic engine with real source files", () => {
     expect(result.blocks.filter((b) => b.type === "error")).toHaveLength(0);
     const revenue = result.blocks.find((b) => b.id === "revenue")!;
     expect(revenue.type === "metric" && Number(revenue.value)).toBe(640);
-    expect(count).toBe(3);
+    expect(count).toBe(1);
+    expect([...builds.values()]).toEqual([1, 1, 1]);
   });
   test("supports custom adapters without changing the engine", async () => {
     const custom: ProjectDefinition = {

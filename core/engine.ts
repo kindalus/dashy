@@ -1,6 +1,5 @@
-import { DuckDBInstance } from "@duckdb/node-api";
-import { resolve } from "node:path";
-import { builtInAdapters, mountSource, type SourceAdapter } from "./sources";
+import { QuerySession } from "./query-session";
+import { builtInAdapters, type SourceAdapter } from "./sources";
 import { defineProject } from "./project";
 import { resolveTheme } from "./theme";
 import { DashyError, parseParams, selectParams } from "./params";
@@ -12,7 +11,6 @@ import type {
   Principal,
   ProjectDefinition,
   QueryResult,
-  Row,
   Scalar,
 } from "./types";
 
@@ -61,6 +59,19 @@ export class DashyEngine {
     raw: Record<string, unknown> = {},
     principal?: Principal,
   ): Promise<QueryResult> {
+    const session = new QuerySession(this.project, this.adapters);
+    try {
+      return await this.executeQuery(session, name, raw, principal);
+    } finally {
+      await session.close();
+    }
+  }
+  private async executeQuery(
+    session: QuerySession,
+    name: string,
+    raw: Record<string, unknown>,
+    principal?: Principal,
+  ): Promise<QueryResult> {
     const definition = this.project.queries[name];
     if (!definition || !Object.hasOwn(this.project.queries, name))
       throw new DashyError("Query not found", 404);
@@ -79,43 +90,13 @@ export class DashyEngine {
         return identifier(sourceName);
       },
     });
-    const start = performance.now();
-    const instance = await DuckDBInstance.create(":memory:", {
-      threads: "2",
-      memory_limit: "512MB",
-      autoinstall_known_extensions: "false",
-      autoload_known_extensions: "false",
-    });
-    const connection = await instance.connect();
-    const timer = setTimeout(() => connection.interrupt(), 30_000);
-    try {
-      for (const sourceName of new Set(definition.sources))
-        await mountSource(
-          connection,
-          sourceName,
-          this.project.sources[sourceName]!,
-          resolve(this.project.dataDir || "."),
-          this.adapters,
-        );
-      // The wrapper permits a single relational query and caps the materialized response.
-      const limit = definition.maxRows || 10_000;
-      const reader = await connection.runAndReadAll(
-        `SELECT * FROM (${statement.text.trim().replace(/;$/, "")}) AS dashy_result LIMIT ${limit + 1}`,
-        statement.values,
-      );
-      const rows = reader.getRowObjectsJson() as Row[];
-      return {
-        columns: reader.columnNames(),
-        rows: rows.slice(0, limit),
-        truncated: rows.length > limit,
-        durationMs: Math.round(performance.now() - start),
-      };
-    } finally {
-      clearTimeout(timer);
-      connection.closeSync();
-      instance.closeSync();
-    }
+    return session.run(
+      definition.sources,
+      statement,
+      definition.maxRows || 10_000,
+    );
   }
+
   async metric(
     name: string,
     raw: Record<string, unknown> = {},
@@ -164,58 +145,69 @@ export class DashyEngine {
       raw,
       definition.defaults,
     );
-    // Request-local memoization shares queries between blocks without leaking results between users.
-    const results = new Map<string, Promise<QueryResult>>();
-    const execute = (queryName: string) => {
-      if (!results.has(queryName)) {
-        const accepted = this.project.queries[queryName]!.params || [];
-        const inputs = selectParams(params, accepted);
-        // Preserve explicitly cleared dashboard filters. Omission would apply
-        // the parameter's default a second time inside query().
-        for (const name of accepted) {
-          if (definition.params?.includes(name) && !Object.hasOwn(params, name))
-            inputs[name] = null;
+    const session = new QuerySession(this.project, this.adapters);
+    try {
+      // Request-local memoization shares queries between blocks without leaking results between users.
+      const results = new Map<string, Promise<QueryResult>>();
+      const execute = (queryName: string) => {
+        if (!results.has(queryName)) {
+          const accepted = this.project.queries[queryName]!.params || [];
+          const inputs = selectParams(params, accepted);
+          // Preserve explicitly cleared dashboard filters. Omission would apply
+          // the parameter's default a second time inside query().
+          for (const name of accepted) {
+            if (
+              definition.params?.includes(name) &&
+              !Object.hasOwn(params, name)
+            )
+              inputs[name] = null;
+          }
+          results.set(
+            queryName,
+            this.executeQuery(session, queryName, inputs, principal),
+          );
         }
-        results.set(queryName, this.query(queryName, inputs, principal));
-      }
-      return results.get(queryName)!;
-    };
-    const blocks: BlockResult[] = [];
-    for (const block of definition.blocks) {
-      try {
-        if (block.type === "metric")
+        return results.get(queryName)!;
+      };
+      const blocks: BlockResult[] = [];
+      for (const block of definition.blocks) {
+        try {
+          if (block.type === "metric")
+            blocks.push({
+              id: block.id,
+              type: "metric",
+              definition: this.project.metrics[block.metric]!,
+              value: await this.metric(block.metric, {}, principal, execute),
+            });
+          else
+            blocks.push({
+              id: block.id,
+              type: "dataset",
+              definition: this.project.datasets[block.dataset]!,
+              result: await this.dataset(block.dataset, {}, principal, execute),
+            });
+        } catch (error) {
+          if (!(error instanceof DashyError))
+            console.error(`[dashy] Block ${block.id} failed`, error);
           blocks.push({
             id: block.id,
-            type: "metric",
-            definition: this.project.metrics[block.metric]!,
-            value: await this.metric(block.metric, {}, principal, execute),
+            type: "error",
+            message:
+              error instanceof DashyError
+                ? error.message
+                : "Unable to load this block. Check the server logs and source configuration.",
           });
-        else
-          blocks.push({
-            id: block.id,
-            type: "dataset",
-            definition: this.project.datasets[block.dataset]!,
-            result: await this.dataset(block.dataset, {}, principal, execute),
-          });
-      } catch (error) {
-        if (!(error instanceof DashyError))
-          console.error(`[dashy] Block ${block.id} failed`, error);
-        blocks.push({
-          id: block.id,
-          type: "error",
-          message:
-            error instanceof DashyError
-              ? error.message
-              : "Unable to load this block. Check the server logs and source configuration.",
-        });
+        }
       }
+      return {
+        id: name,
+        definition,
+        params,
+        blocks,
+        generatedAt: new Date().toISOString(),
+      };
+    } finally {
+      await session.close();
     }
-    return {
-      id: name,
-      definition,
-      params,
-      blocks,
-      generatedAt: new Date().toISOString(),
-    };
   }
 }

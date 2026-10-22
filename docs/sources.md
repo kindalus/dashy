@@ -13,15 +13,15 @@ sources: {
 }
 ```
 
-CSV, JSON and Parquet use DuckDB's native readers. JSON accepts tabular arrays or newline-delimited records. CSV expects a header row. Parquet supports hive partitions. A DuckDB database is attached read-only. SQLite uses Bun's native read-only driver and imports its table into the query's in-memory DuckDB instance. Excel uses ExcelJS, reads the selected worksheet, and imports its rows similarly.
+CSV, JSON and Parquet use DuckDB's native readers. JSON accepts tabular arrays or newline-delimited records. CSV expects a header row. Parquet supports hive partitions. A DuckDB database is attached read-only. SQLite uses Bun's native read-only driver and imports its table into the request's in-memory DuckDB instance. Excel uses ExcelJS, reads the selected worksheet, and imports its rows similarly.
 
-Each query gets its own DuckDB instance and closes connections on success or failure. Sources with the same database file can be used by different queries. Files are read again on refresh; there is no persistent result cache to invalidate. A dashboard memoizes repeated queries only for the lifetime of its request.
+Each standalone query gets its own DuckDB instance. A dashboard uses one instance for its request, executes queries sequentially and mounts each source once. Repeated query results are shared only within that request. Connections close on success or failure; concurrent requests never share a connection or results. A refresh creates a new session and reads sources again. Native file views may read their files for each query; this is not a transactional snapshot of external files.
 
 ## Limits and data types
 
 - Query results default to 10,000 rows. Set `maxRows` per query, up to 100,000. `truncated` signals that more rows exist.
 - A query connection is interrupted after 30 seconds. This interruption does not cancel an Excel workbook parse already in progress.
-- Each DuckDB instance uses at most two threads and a configured memory limit of 512 MB. This is per query, not a server-wide limit.
+- Each DuckDB instance uses at most two threads and a configured memory limit of 512 MB. This is per request, not a server-wide limit.
 - SQLite and Excel imports are capped at 100,000 rows. For larger datasets, convert to CSV/Parquet or use DuckDB directly.
 - Excel `.xlsx` files are limited to 100 MB compressed file size. This does not bound decompressed memory. Use trusted, prepared workbooks; there is no upload endpoint.
 - Excel headers must be unique and non-empty. Dates become ISO strings. Formulas use cached results; Dashy does not recalculate Excel formulas. Missing cached results and Excel cell errors fail the import.
@@ -39,7 +39,7 @@ Supported explicit types are `VARCHAR`, `DOUBLE`, `BIGINT`, `BOOLEAN`, `DATE` an
 
 ## Add a source adapter
 
-An adapter mounts a table or view on the supplied DuckDB connection. It owns format-specific reading; the engine still handles queries, parameters, permissions and responses.
+An adapter mounts a table or view on the supplied DuckDB connection. It runs once per source per request; multiple queries in the same dashboard reuse that mount. It owns format-specific reading; the engine still handles queries, parameters, permissions and responses.
 
 ```ts
 import { DashyEngine } from "../core/engine";
