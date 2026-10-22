@@ -200,6 +200,24 @@ export default defineProject({
       ],
     },
   },
+  pages: {
+    "product-explorer": {
+      label: "Product explorer",
+      description: "Best-selling products, units and gross margins at a glance.",
+      group: "Custom pages",
+      icon: "package",
+      params: filters,
+      component: "pages/products.tsx",
+    },
+    "market-explorer": {
+      label: "Market explorer",
+      description: "Compare customer countries and explore their orders.",
+      group: "Custom pages",
+      icon: "users",
+      params: ["period", "category", "channel"],
+      component: "pages/markets.tsx",
+    },
+  },
   dashboards: {
     overview: {
       icon: "layout-dashboard",

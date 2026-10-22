@@ -10,6 +10,7 @@ samples/
   maven-analytics/
     dashy.config.ts
     queries.ts
+    extensions/pages/
     data/
     README.md
   source-examples/
@@ -20,6 +21,7 @@ samples/
 
 ```sh
 bun run dashy samples
+bun run dashy build --with-sample maven-analytics
 bun run start --with-sample maven-analytics
 bun run dev --with-sample source-examples
 ```
@@ -37,7 +39,9 @@ trusted executable server code. Restart the server after editing one.
 `bun run build` bundles each sample's TypeScript configuration and local imports
 into `.output/samples/<name>/dashy.config.js`, and copies its data and supporting
 non-code files. `.output/dashy.mjs` provides the same CLI for deployment. The build
-does not activate a sample. A new self-contained JS or Bun-compatible TS sample
+only compiles custom components for the selected implementation. Use
+`bun run dashy build --with-sample maven-analytics` to compile the Maven pages.
+New or changed custom components require rebuilding. A new self-contained JS or Bun-compatible TS sample
 can also be added to a deployed `samples/` folder without rebuilding the server.
 Samples importing third-party packages must ship those runtime dependencies too.
 
@@ -49,8 +53,11 @@ integration tests cover totals, every dashboard, filters and row limits. The
 expected totals were independently calculated from the supplied CSVs.
 
 `bun run check:build` starts the packaged CLI outside the repository with no
-sample, each supplied sample, and a sample added after building. It checks SSR,
-client assets, API results and returning to the empty default.
+sample, Source Examples, and a sample added after building. It also verifies that
+uncompiled custom pages cannot start. It checks SSR, client assets, API results
+and returning to the empty default. After building Maven, run
+`bun scripts/check-build.ts --maven` to verify its dashboards, custom pages,
+initial CSS, filtered datasets and empty results in an isolated deployment.
 
 Manual Chrome checks on 2026-10-22 verified the empty mobile workspace, retail
 charts, country/channel filters, chart-to-table switching, detail text/number/

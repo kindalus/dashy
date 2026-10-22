@@ -34,7 +34,8 @@ bun run dev --with-sample source-examples
 ```
 
 `maven-analytics` includes the full Global Electronics Retailer CSV dataset and
-five dashboards. `source-examples` contains 12 synthetic orders in six formats.
+five dashboards and two custom pages: Product explorer and Market explorer.
+`source-examples` contains 12 synthetic orders in six formats.
 Both work offline. Selecting a sample reads it directly from `samples/<name>`;
 it never overwrites your project. An unknown name exits with an error and lists
 the available samples. See [the sample convention](samples/README.md).
@@ -45,7 +46,9 @@ bun run typecheck
 bun run build
 bun run check:build
 bun run start                                  # your project, empty by default
-bun run start --with-sample maven-analytics     # the retail sample
+bun run dashy build --with-sample maven-analytics
+bun scripts/check-build.ts --maven
+bun run start --with-sample maven-analytics     # includes the two custom pages
 ```
 
 For the short command, register the local executable once with `bun link` and
@@ -58,7 +61,8 @@ dashy dev --with-sample source-examples --port 3001
 ```
 
 Run these commands from the project root, or invoke the CLI by its absolute path with `DASHY_PROJECT_DIR` for an external implementation. Production requires a build; sample selection
-happens at runtime, so changing samples does not require rebuilding. Config edits
+happens at runtime for artifacts. Samples with custom components, including Maven,
+must be selected during build so their pages are compiled. Config edits
 require restarting the server. `--port` chooses the listening port.
 
 Formatting uses `pt` by default, including the samples. Set `locale` in
@@ -79,6 +83,7 @@ Deploy the `.output` directory with Bun installed. From that directory:
 
 ```sh
 bun dashy.mjs start
+# Requires a build selected with --with-sample maven-analytics:
 bun dashy.mjs start --with-sample maven-analytics
 ```
 
@@ -88,7 +93,9 @@ Absolute sources stay external. Runtime configurations kept outside the build
 need their own installed dependencies. Native
 DuckDB bindings must match the deployment OS and architecture.
 `check:build` runs this deployment in isolation and checks the empty workspace,
-both samples, runtime discovery, SSR, assets, filters and missing-sample errors.
+Source Examples, runtime discovery, SSR, assets, filters and missing-sample errors.
+After building Maven, `bun scripts/check-build.ts --maven` checks its dashboards,
+custom pages, initial CSS and datasets in an isolated deployment.
 
 ## External implementations and custom pages
 

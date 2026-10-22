@@ -4,7 +4,8 @@ Run from the Dashy root:
 
 ```sh
 bun run dev --with-sample maven-analytics
-# Or after bun run build:
+# Production must compile this sample's custom pages:
+bun run dashy build --with-sample maven-analytics
 bun run start --with-sample maven-analytics
 ```
 
@@ -13,6 +14,34 @@ The five dashboards cover overview, products, customers, stores and order detail
 They demonstrate joins, shared queries, metrics, line and bar charts with multiple
 series, reusable datasets, date ranges, select/string/number/boolean parameters,
 currency and percentage formatting, and paginated tables.
+
+## Custom pages
+
+The **Custom pages** navigation group contains two Solid pages:
+
+- `/pages/product-explorer`: the top 25 products as ranked cards with revenue,
+  gross profit, units and margin. Filters cover period, customer country, category
+  and channel. Each card links to the matching order lines.
+- `/pages/market-explorer`: customer countries ranked by revenue, with revenue
+  share, customers, orders and average order value. Filters cover period, category
+  and channel. Each country links to its order lines.
+
+Both use the same `products` and `countries` datasets as the dashboards. Each page
+makes one request with all its parameters after hydration and shares that result
+between its views. Loading, error/retry and empty states are included. Filter
+state lives in the URL; dashboard links preserve it. Order links use the existing
+product **contains** filter, so similarly named products can also match.
+
+Page metadata is registered inline in `dashy.config.ts`; components and the shared
+filter/loading UI live in `extensions/pages/`. This demonstrates the inline `pages`
+registry supported alongside the optional `extensions/index.ts` registry.
+Styles use Dashy theme variables for colors and corners, and values use the
+configured locale. No UI dependencies or additional queries are required.
+
+A default build has no compiled custom pages. Rebuild with the command above
+before starting this sample in production. To verify the packaged sample, run
+`bun scripts/check-build.ts --maven` after its build. `bun run check:build` verifies
+the default build instead.
 
 ## Data provenance
 

@@ -15,7 +15,7 @@ Este guia destina-se a agentes e programadores que implementam uma solução com
 - [Implementação externa](examples/external-application/): dashboard e página Customer 360 com configuração, artefactos e dados separados.
 - [API pública](core/index.ts) e [API de páginas](src/extension-api.ts): imports `dashy`, `dashy/types` e `dashy/ui`.
 - [Source Examples](samples/source-examples/dashy.config.ts): projeto completo com dados sintéticos nos seis formatos suportados.
-- [Maven Analytics](samples/maven-analytics/dashy.config.ts): projeto completo com dados de retalho, cinco dashboards e filtros variados.
+- [Maven Analytics](samples/maven-analytics/dashy.config.ts): projeto completo com dados de retalho, cinco dashboards, duas páginas customizadas e filtros variados.
 - [Queries Maven](samples/maven-analytics/queries.ts): SQL separado da configuração de apresentação.
 - [Validação do projeto](core/project.ts): referências, nomes e layouts verificados no arranque.
 - [Helpers SQL](core/sql.ts): construção de predicados com valores ligados separadamente.
@@ -66,6 +66,7 @@ bun run dev --with-sample maven-analytics --locale en --theme excel --port 3001
 
 bun run build
 bun run start --port 3000
+bun run dashy build --with-sample maven-analytics
 bun run start --with-sample maven-analytics --locale pt-AO
 bun run dashy --help
 ```
@@ -315,11 +316,11 @@ Na máquina de destino, com Bun instalado, executar dentro de `.output/`:
 
 ```sh
 bun dashy.mjs start --port 3000 --locale pt
-# Ou um sample distribuído:
+# Ou Maven, se tiver sido selecionado no build:
 bun dashy.mjs start --with-sample maven-analytics --theme excel
 ```
 
-Alterações ao renderer/motor exigem novo build. Ao distribuir alterações da configuração TypeScript da árvore de código, reconstruir o pacote para atualizar a configuração compilada. Uma configuração de runtime autocontida no deployment pode ser alterada com reinício; selecionar outro sample, tema ou locale no arranque não exige reconstruir o servidor.
+Alterações ao renderer/motor exigem novo build. Ao distribuir alterações da configuração TypeScript da árvore de código, reconstruir o pacote para atualizar a configuração compilada. Uma configuração de runtime autocontida no deployment pode ser alterada com reinício; selecionar outro tema ou locale no arranque não exige reconstruir o servidor. Samples com componentes customizados exigem um build que inclua essas páginas.
 
 ## Implementações externas e variáveis de ambiente
 
@@ -442,6 +443,28 @@ bun run build
 bun run check:build
 ```
 
-`check:extensions` constrói uma cópia temporária do exemplo fora do repositório e verifica arranque noutra pasta, preservação da configuração, SSR, assets, autenticação, roles, parâmetros, APIs protegidas, mudanças de tema/locale e diagnóstico de páginas não compiladas. Também elimina a implementação temporária e verifica o pacote autónomo. Escreve `.output/` com o fixture de teste; executar depois `build` para repor a implementação pretendida. `check:build` verifica a configuração inicial vazia e os samples existentes, pelo que deve correr depois de um build sem seleção externa.
+`check:extensions` constrói uma cópia temporária do exemplo fora do repositório e verifica arranque noutra pasta, preservação da configuração, SSR, assets, autenticação, roles, parâmetros, APIs protegidas, mudanças de tema/locale e diagnóstico de páginas não compiladas. Também elimina a implementação temporária e verifica o pacote autónomo. Escreve `.output/` com o fixture de teste; executar depois `build` para repor a implementação pretendida. `check:build` verifica a configuração inicial vazia, Source Examples e a rejeição de páginas não compiladas, pelo que deve correr depois de um build sem seleção externa. Depois de compilar Maven, usar `bun scripts/check-build.ts --maven` para validar esse sample.
 
 No browser, abrir `/pages/customer?customer=1`: devem aparecer Notebook e Keyboard, com 12,5 EUR e 45 EUR. Selecionar o cliente 2 mostra apenas Monitor, com 210 EUR. Verificar navegação para Sales, filtros, Reload orders, caso sem encomendas, estados de espera/erro e layout móvel.
+
+## Páginas customizadas no sample Maven
+
+`samples/maven-analytics/extensions/pages/` contém dois exemplos Solid completos,
+registados em `pages` no `dashy.config.ts` do sample:
+
+- `/pages/product-explorer`: cartões dos 25 produtos com maior receita, com filtros
+  de período, país, categoria e canal, e ligações para as linhas das encomendas.
+- `/pages/market-explorer`: comparação por país do cliente, quota da receita,
+  clientes, encomendas e valor médio. Filtra período, categoria e canal.
+
+Reutilizam os datasets `products` e `countries`, respetivamente. Cada página faz
+um pedido com os parâmetros e partilha o resultado pelos seus elementos. O helper
+local `shared.tsx` trata loading, cancelamento, erro/repetição e ausência de dados.
+Os filtros usam GET e os links preservam os parâmetros. O filtro de produto nas
+linhas de encomendas pesquisa por conteúdo do nome, não por igualdade exata.
+As cores e os cantos seguem o tema; a formatação numérica segue o locale.
+
+Desenvolvimento: `bun run dev --with-sample maven-analytics`.
+Produção: `bun run dashy build --with-sample maven-analytics`, seguido de
+`bun run start --with-sample maven-analytics`. O build predefinido não compila estas
+páginas. Para validar o pacote Maven: `bun scripts/check-build.ts --maven`.

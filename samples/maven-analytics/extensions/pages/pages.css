@@ -1,0 +1,34 @@
+.maven-page { display: grid; gap: 24px; }
+.maven-page a { color: var(--accent); text-underline-offset: 3px; }
+.maven-page a.button { color: var(--muted); }
+.maven-section-heading, .maven-market-title { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.maven-caption { color: var(--muted); margin: 10px 0 20px; }
+.maven-products { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 18px; list-style: none; padding: 0; margin: 0; }
+.maven-product { display: flex; flex-direction: column; padding: 22px; grid-column: auto; }
+.maven-product-heading { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); margin-bottom: 16px; }
+.maven-rank { color: var(--accent); font-weight: 650; }
+.maven-product h3 { font-size: 17px; line-height: 1.4; }
+.maven-product > a { margin-top: auto; padding-top: 18px; }
+.maven-values { display: flex; flex-wrap: wrap; gap: 18px 32px; margin: 12px 0; }
+.maven-values dt { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+.maven-values dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 600; }
+.maven-product .maven-values > div { flex: 1 1 40%; }
+.maven-money { color: var(--metric-color); font-size: 20px; font-variant-numeric: tabular-nums; }
+.maven-markets { list-style: none; margin: 0; padding: 0 24px; }
+.maven-markets > li { padding: 24px 0; }
+.maven-markets > li + li { border-top: 1px solid var(--line); }
+.maven-share { display: flex; align-items: center; gap: 16px; margin: 14px 0; }
+.maven-share > span { min-width: 65px; text-align: right; font-variant-numeric: tabular-nums; }
+.maven-share meter { display: block; width: 100%; height: 14px; border: 0; background: var(--accent-soft); border-radius: var(--radius-input); }
+.maven-share meter::-webkit-meter-bar { border: 0; background: var(--accent-soft); border-radius: var(--radius-input); }
+.maven-share meter::-webkit-meter-optimum-value { background: var(--chart-1); border-radius: var(--radius-input); }
+.maven-share meter::-moz-meter-bar { background: var(--chart-1); border-radius: var(--radius-input); }
+.maven-notice { padding: 24px; }
+.maven-notice p { margin: 12px 0; }
+@media (max-width: 600px) {
+  .maven-page .filter-field { flex: 1 1 100%; }
+  .maven-market-title { display: grid; gap: 8px; }
+  .maven-markets { padding: 0 18px; }
+}
+
+.maven-page .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }

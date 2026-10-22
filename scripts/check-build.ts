@@ -7,6 +7,7 @@ import { themeNames, resolveTheme } from "../core/theme";
 
 // Run the actual packaged CLI and server outside the source tree. This catches
 // both missing production dependencies and build-time sample selection leaks.
+const mavenOnly = process.argv.includes("--maven");
 const directory = await mkdtemp(join(tmpdir(), "dashy-build-"));
 try {
   await cp(resolve(".output"), directory, { recursive: true });
@@ -110,7 +111,7 @@ try {
     return data;
   }
 
-  await withServer(undefined, async (request) => {
+  if (!mavenOnly) await withServer(undefined, async (request) => {
     const data = await checkPage(request);
     assert.deepEqual(data.catalog.dashboards, {});
     assert.deepEqual(data.catalog.params, {});
@@ -118,11 +119,27 @@ try {
     assert.equal(data.catalog.locale, "pt");
     assert.equal((await request("/api/queries/summary")).status, 404);
   });
-  await withServer("maven-analytics", async (request) => {
+  if (mavenOnly) await withServer("maven-analytics", async (request) => {
     const data = await checkPage(
       request,
       "/dashboards/overview?country=Canada&channel=Online",
     );
+    for (const [id, dataset] of [["product-explorer", "products"], ["market-explorer", "countries"]]) {
+      const page = await checkPage(request, `/pages/${id}?category=Computers&channel=Online`);
+      assert.equal(page.page.id, id);
+      assert.equal(page.page.params.category, "Computers");
+      assert.equal(page.page.definition.component, undefined);
+      const html = await (await request(`/pages/${id}`)).text();
+      assert.ok(html.includes("Loading data"));
+      assert.ok(html.includes("Custom pages"));
+      const styles = [...html.matchAll(/href="(\/assets\/[^"?]+\.css)"/g)];
+      const css = (await Promise.all(styles.map(async match => (await request(match[1]!)).text()))).join("\n");
+      assert.ok(css.includes(".maven-page"), "Custom CSS must be included before hydration");
+      const result = await (await request(`/api/datasets/${dataset}?category=Computers&channel=Online`)).json();
+      assert.ok(result.rows.length > 0);
+      const empty = await (await request(`/api/datasets/${dataset}?period.from=2030-01-01&period.until=2030-12-31`)).json();
+      assert.equal(empty.rows.length, 0);
+    }
     assert.equal(data.dashboard.params.country, "Canada");
     assert.equal(data.catalog.locale, "pt");
     assert.equal(data.dashboard.params.channel, "Online");
@@ -165,146 +182,154 @@ try {
       400,
     );
   });
-  await withServer("source-examples", async (request) => {
-    const data = await checkPage(request, "/dashboards/overview?region=North");
-    assert.equal(data.dashboard.params.region, "North");
-    const overview = await (
-      await request("/api/dashboards/overview?region=North")
-    ).json();
-    assert.equal(Number(overview.blocks[0].value), 3160);
-    const sources: DashboardResult = await (
-      await request("/api/dashboards/sources")
-    ).json();
-    assert.equal(sources.blocks.length, 6);
-    for (const block of sources.blocks) {
-      assert.equal(block.type, "dataset");
-      if (block.type === "dataset") {
-        assert.equal(block.result.rows.length, 12, block.id);
-        assert.equal(
-          block.result.rows.reduce((sum, row) => sum + Number(row.revenue), 0),
-          6420,
-          block.id,
-        );
+  if (!mavenOnly) {
+    // Custom components must be compiled for the chosen implementation.
+    const uncompiled = Bun.spawn([process.execPath, cli, "start", "--with-sample", "maven-analytics"],
+      { cwd: directory, stdout: "pipe", stderr: "pipe" });
+    const uncompiledOutput = Promise.all([new Response(uncompiled.stdout).text(), new Response(uncompiled.stderr).text()]);
+    assert.equal(await uncompiled.exited, 1);
+    assert.match((await uncompiledOutput).join("\n"), /not compiled|rebuild/i);
+    await withServer("source-examples", async (request) => {
+      const data = await checkPage(request, "/dashboards/overview?region=North");
+      assert.equal(data.dashboard.params.region, "North");
+      const overview = await (
+        await request("/api/dashboards/overview?region=North")
+      ).json();
+      assert.equal(Number(overview.blocks[0].value), 3160);
+      const sources: DashboardResult = await (
+        await request("/api/dashboards/sources")
+      ).json();
+      assert.equal(sources.blocks.length, 6);
+      for (const block of sources.blocks) {
+        assert.equal(block.type, "dataset");
+        if (block.type === "dataset") {
+          assert.equal(block.result.rows.length, 12, block.id);
+          assert.equal(
+            block.result.rows.reduce((sum, row) => sum + Number(row.revenue), 0),
+            6420,
+            block.id,
+          );
+        }
       }
-    }
-  });
-  // A new sample can be added after build, without editing a registry or rebuilding.
-  await mkdir(join(directory, "samples/runtime-added"));
-  await writeFile(
-    join(directory, "samples/runtime-added/dashy.config.js"),
-    `export default { name: 'Added at runtime', params: {}, sources: {}, queries: {}, datasets: {}, metrics: {}, dashboards: {} };`,
-  );
-  await withServer("runtime-added", async (request) => {
-    assert.equal(
-      (await (await request("/api/catalog")).json()).name,
-      "Added at runtime",
-    );
-  });
-  // A real HTTP disconnect must reach adapters through the packaged server.
-  const cancellationMarker = join(directory, "cancelled.txt");
-  await writeFile(
-    join(directory, "samples/runtime-added/dashy.config.js"),
-    `export default {
-      name: 'Cancellation check', params: {}, datasets: {}, metrics: {}, dashboards: {},
-      sources: { slow: { type: 'slow', path: '' } },
-      queries: { slow: { label: 'Slow', sources: ['slow'],
-        build: () => ({ text: 'SELECT 42 AS value', values: [] }) } },
-      adapters: { slow: async ({ signal }) => {
-        await Bun.write(${JSON.stringify(cancellationMarker)}, 'started');
-        await new Promise((resolve) => {
-          const timer = setTimeout(resolve, 5000);
-          signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
-        });
-        await Bun.write(${JSON.stringify(cancellationMarker)}, signal.aborted ? 'cancelled' : 'finished');
-      } }
-    };`,
-  );
-  await withServer("runtime-added", async (request) => {
-    const waitForMarker = async (expected: string) => {
-      const deadline = Date.now() + 3000;
-      while (Date.now() < deadline) {
-        if (await readFile(cancellationMarker, "utf8").catch(() => "") === expected) return;
-        await Bun.sleep(20);
-      }
-      assert.fail(`Expected cancellation marker: ${expected}`);
-    };
-    const controller = new AbortController();
-    const pending = request("/api/queries/slow", "GET", controller.signal).catch((error) => error);
-    try {
-      await waitForMarker("started");
-      controller.abort();
-      assert.equal((await pending).name, "AbortError");
-      await waitForMarker("cancelled");
-    } finally {
-      controller.abort();
-      await pending;
-    }
-  });
-  // Locale selection must reach both the API and the hydration data.
-  await writeFile(
-    join(directory, "samples/runtime-added/dashy.config.js"),
-    `export default { name: 'Locale check', locale: 'pt-AO', params: {}, sources: {}, queries: {}, datasets: {}, metrics: {}, dashboards: {} };`,
-  );
-  await withServer("runtime-added", async (request) => {
-    assert.equal((await checkPage(request)).catalog.locale, "pt-AO");
-  });
-  await withServer("runtime-added", async (request) => {
-    assert.equal((await checkPage(request)).catalog.locale, "en");
-  }, undefined, "en");
-  // Theme selection is runtime configuration and must reach HTML before paint.
-  for (const name of themeNames) {
-    const theme = { name, corners: { buttons: "rounded" as const } };
+    });
+    // A new sample can be added after build, without editing a registry or rebuilding.
+    await mkdir(join(directory, "samples/runtime-added"));
     await writeFile(
       join(directory, "samples/runtime-added/dashy.config.js"),
-      `export default { name: 'Theme check', theme: ${JSON.stringify(theme)}, params: {}, sources: {}, queries: {}, datasets: {}, metrics: {}, dashboards: {} };`,
+      `export default { name: 'Added at runtime', params: {}, sources: {}, queries: {}, datasets: {}, metrics: {}, dashboards: {} };`,
     );
     await withServer("runtime-added", async (request) => {
-      const data = await checkPage(request);
-      assert.deepEqual(data.catalog.theme, resolveTheme(theme));
+      assert.equal(
+        (await (await request("/api/catalog")).json()).name,
+        "Added at runtime",
+      );
     });
-    // CLI selection replaces both the configured theme and its corner overrides.
-    const overrideName =
-      themeNames[(themeNames.indexOf(name) + 1) % themeNames.length]!;
+    // A real HTTP disconnect must reach adapters through the packaged server.
+    const cancellationMarker = join(directory, "cancelled.txt");
+    await writeFile(
+      join(directory, "samples/runtime-added/dashy.config.js"),
+      `export default {
+        name: 'Cancellation check', params: {}, datasets: {}, metrics: {}, dashboards: {},
+        sources: { slow: { type: 'slow', path: '' } },
+        queries: { slow: { label: 'Slow', sources: ['slow'],
+          build: () => ({ text: 'SELECT 42 AS value', values: [] }) } },
+        adapters: { slow: async ({ signal }) => {
+          await Bun.write(${JSON.stringify(cancellationMarker)}, 'started');
+          await new Promise((resolve) => {
+            const timer = setTimeout(resolve, 5000);
+            signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+          });
+          await Bun.write(${JSON.stringify(cancellationMarker)}, signal.aborted ? 'cancelled' : 'finished');
+        } }
+      };`,
+    );
+    await withServer("runtime-added", async (request) => {
+      const waitForMarker = async (expected: string) => {
+        const deadline = Date.now() + 3000;
+        while (Date.now() < deadline) {
+          if (await readFile(cancellationMarker, "utf8").catch(() => "") === expected) return;
+          await Bun.sleep(20);
+        }
+        assert.fail(`Expected cancellation marker: ${expected}`);
+      };
+      const controller = new AbortController();
+      const pending = request("/api/queries/slow", "GET", controller.signal).catch((error) => error);
+      try {
+        await waitForMarker("started");
+        controller.abort();
+        assert.equal((await pending).name, "AbortError");
+        await waitForMarker("cancelled");
+      } finally {
+        controller.abort();
+        await pending;
+      }
+    });
+    // Locale selection must reach both the API and the hydration data.
+    await writeFile(
+      join(directory, "samples/runtime-added/dashy.config.js"),
+      `export default { name: 'Locale check', locale: 'pt-AO', params: {}, sources: {}, queries: {}, datasets: {}, metrics: {}, dashboards: {} };`,
+    );
+    await withServer("runtime-added", async (request) => {
+      assert.equal((await checkPage(request)).catalog.locale, "pt-AO");
+    });
+    await withServer("runtime-added", async (request) => {
+      assert.equal((await checkPage(request)).catalog.locale, "en");
+    }, undefined, "en");
+    // Theme selection is runtime configuration and must reach HTML before paint.
+    for (const name of themeNames) {
+      const theme = { name, corners: { buttons: "rounded" as const } };
+      await writeFile(
+        join(directory, "samples/runtime-added/dashy.config.js"),
+        `export default { name: 'Theme check', theme: ${JSON.stringify(theme)}, params: {}, sources: {}, queries: {}, datasets: {}, metrics: {}, dashboards: {} };`,
+      );
+      await withServer("runtime-added", async (request) => {
+        const data = await checkPage(request);
+        assert.deepEqual(data.catalog.theme, resolveTheme(theme));
+      });
+      // CLI selection replaces both the configured theme and its corner overrides.
+      const overrideName =
+        themeNames[(themeNames.indexOf(name) + 1) % themeNames.length]!;
+      await withServer(
+        "runtime-added",
+        async (request) => {
+          const data = await checkPage(request);
+          assert.deepEqual(
+            data.catalog.theme,
+            resolveTheme({ name: overrideName }),
+          );
+        },
+        overrideName,
+      );
+    }
     await withServer(
-      "runtime-added",
+      undefined,
       async (request) => {
         const data = await checkPage(request);
-        assert.deepEqual(
-          data.catalog.theme,
-          resolveTheme({ name: overrideName }),
-        );
+        assert.deepEqual(data.catalog.theme, resolveTheme({ name: "chromeos" }));
       },
-      overrideName,
+      "chromeos",
+    );
+    // Starting without the flag after samples must still load the empty project.
+    await withServer(undefined, async (request) => {
+      assert.deepEqual(
+        (await (await request("/api/catalog")).json()).dashboards,
+        {},
+      );
+    });
+    const missing = Bun.spawn(
+      [process.execPath, cli, "start", "--with-sample", "missing"],
+      { cwd: directory, stdout: "pipe", stderr: "pipe" },
+    );
+    const error = await new Response(missing.stderr).text();
+    assert.equal(await missing.exited, 1);
+    assert.match(
+      error,
+      /Available samples: maven-analytics, runtime-added, source-examples/,
     );
   }
-  await withServer(
-    undefined,
-    async (request) => {
-      const data = await checkPage(request);
-      assert.deepEqual(data.catalog.theme, resolveTheme({ name: "chromeos" }));
-    },
-    "chromeos",
-  );
-  // Starting without the flag after samples must still load the empty project.
-  await withServer(undefined, async (request) => {
-    assert.deepEqual(
-      (await (await request("/api/catalog")).json()).dashboards,
-      {},
-    );
-  });
-  const missing = Bun.spawn(
-    [process.execPath, cli, "start", "--with-sample", "missing"],
-    { cwd: directory, stdout: "pipe", stderr: "pipe" },
-  );
-  const error = await new Response(missing.stderr).text();
-  assert.equal(await missing.exited, 1);
-  assert.match(
-    error,
-    /Available samples: maven-analytics, runtime-added, source-examples/,
-  );
-  console.log(
-    "Production passed: empty default, runtime discovery, Maven data, six adapters, SSR, assets, filters, locale/theme overrides, HTTP cancellation and missing-sample errors in an isolated deployment.",
-  );
+  console.log(mavenOnly
+    ? "Maven production passed: custom pages, initial CSS, datasets, filters, empty results and dashboards in an isolated deployment."
+    : "Production passed: empty default, runtime discovery, uncompiled-page guard, six adapters, SSR, assets, filters, locale/theme overrides, HTTP cancellation and missing-sample errors in an isolated deployment.");
 } finally {
   await rm(directory, { recursive: true, force: true });
 }
