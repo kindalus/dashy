@@ -17,6 +17,7 @@ import type {
   Params,
   QueryResult,
 } from "../core/types";
+import { Chart } from "./chart";
 import { formatValue } from "./format";
 import { Brand, DashboardNavigation } from "./navigation";
 
@@ -510,123 +511,6 @@ function Dataset(props: {
             locale={props.locale}
           />
         </Show>
-      </Show>
-    </>
-  );
-}
-function Chart(props: {
-  definition: DatasetDefinition;
-  result: QueryResult;
-  locale: string;
-}) {
-  let element!: HTMLDivElement;
-  const [error, setError] = createSignal("");
-  // Solid 2 effects use separate tracking and application phases.
-  // https://github.com/solidjs/solid/blob/next/documentation/solid-2.0/MIGRATION.md
-  createEffect(
-    () => ({
-      definition: props.definition,
-      result: props.result,
-      locale: props.locale,
-    }),
-    ({ definition, result, locale }) => {
-      let disposed = false;
-      let chart: import("echarts").ECharts | undefined;
-      let observer: ResizeObserver | undefined;
-      import("./charts")
-        .then((echarts) => {
-          if (disposed) return;
-          const config = definition.chart!;
-          const theme = echarts.readChartTheme(element);
-          chart = echarts.init(element, undefined, { renderer: "svg" });
-          chart.setOption({
-            animation: !matchMedia("(prefers-reduced-motion: reduce)").matches,
-            aria: { enabled: true },
-            color: config.series.map(
-              (s, index) =>
-                s.color || theme.palette[index % theme.palette.length]!,
-            ),
-            textStyle: { fontFamily: theme.font, color: theme.text },
-            grid: {
-              left: 12,
-              right: 20,
-              top: 30,
-              bottom: 10,
-              outerBoundsMode: "same",
-            },
-            tooltip: {
-              trigger: "axis",
-              renderMode: "richText",
-              backgroundColor: theme.surface,
-              borderColor: theme.border,
-              textStyle: { color: theme.text, fontFamily: theme.font },
-            },
-            legend: {
-              type: "scroll",
-              show: config.series.length > 1,
-              top: 0,
-              textStyle: { color: theme.muted },
-              pageTextStyle: { color: theme.muted, fontFamily: theme.font },
-              pageIconColor: theme.muted,
-              pageIconInactiveColor: theme.border,
-            },
-            xAxis: {
-              type: "category",
-              data: result.rows.map((row) => String(row[config.x] ?? "")),
-              boundaryGap: config.type === "bar",
-              axisLine: { lineStyle: { color: theme.border } },
-              axisTick: { show: false },
-              axisLabel: { color: theme.muted, hideOverlap: true },
-            },
-            yAxis: {
-              type: "value",
-              axisLabel: {
-                color: theme.muted,
-                formatter: (n: number) =>
-                  formatValue(n, { decimals: 0 }, locale),
-              },
-              splitLine: { lineStyle: { color: theme.grid } },
-            },
-            series: config.series.map((series) => ({
-              name: series.label,
-              type: config.type,
-              data: result.rows.map((row) =>
-                row[series.key] === null ? null : Number(row[series.key]),
-              ),
-              symbolSize: 6,
-              smooth: false,
-              lineStyle: { width: 2.5 },
-              barMaxWidth: 56,
-              tooltip: {
-                valueFormatter: (value: number) =>
-                  formatValue(value, series.format, locale),
-              },
-            })),
-          });
-          observer = new ResizeObserver(() => chart?.resize());
-          observer.observe(element);
-        })
-        .catch(() => {
-          if (!disposed)
-            setError("Chart unavailable. Switch to Table to view the data.");
-        });
-      return () => {
-        disposed = true;
-        observer?.disconnect();
-        chart?.dispose();
-      };
-    },
-  );
-  return (
-    <>
-      <div
-        class="chart"
-        ref={element}
-        role="img"
-        aria-label={`${props.definition.label}. Use Table for the underlying values.`}
-      />
-      <Show when={error()}>
-        <p role="alert">{error()}</p>
       </Show>
     </>
   );
