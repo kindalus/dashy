@@ -1,6 +1,9 @@
 import { resolve } from "node:path";
 import { stat } from "node:fs/promises";
-import type { DuckDBConnection } from "@duckdb/node-api";
+import type {
+  DuckDBConnection,
+  DuckDBPreparedStatement,
+} from "@duckdb/node-api";
 import type { SourceDefinition, Row } from "./types";
 import { identifier, literal } from "./sql";
 
@@ -14,6 +17,8 @@ export interface AdapterContext {
 export type SourceAdapter = (context: AdapterContext) => Promise<void>;
 const MAX_IMPORTED_ROWS = 100_000;
 const MAX_FILE_BYTES = 100 * 1024 * 1024;
+const cellValue = (row: Row, column: string) =>
+  Object.hasOwn(row, column) ? (row[column] ?? null) : null;
 
 export async function mountRows(
   connection: DuckDBConnection,
@@ -33,9 +38,9 @@ export async function mountRows(
       `Source ${name} exceeds ${MAX_IMPORTED_ROWS} imported rows; use CSV, Parquet or DuckDB for larger sources`,
     );
   const resolvedTypes = columns.map((column) => {
-    if (types[column]) return types[column];
+    if (Object.hasOwn(types, column) && types[column]) return types[column];
     const values = rows
-      .map((row) => row[column])
+      .map((row) => cellValue(row, column))
       .filter((value) => value !== null && value !== undefined);
     if (values.length && values.every((value) => typeof value === "number"))
       return "DOUBLE";
@@ -56,24 +61,40 @@ export async function mountRows(
   await connection.run(
     `CREATE TEMP TABLE ${identifier(name)} (${columns.map((column, i) => `${identifier(column)} ${resolvedTypes[i]}`).join(", ")})`,
   );
-  // Prepared inserts preserve dates and explicit types through DuckDB's casts.
-  const statement = await connection.prepare(
-    `INSERT INTO ${identifier(name)} VALUES (${columns.map(() => "?").join(", ")})`,
+  // Bound batches retain DuckDB's casts while avoiding one asynchronous insert
+  // per row. Cap both rows and placeholders to keep wide imports bounded.
+  const batchSize = Math.max(
+    1,
+    Math.min(256, Math.floor(2048 / columns.length)),
   );
+  const placeholders = `(${columns.map(() => "?").join(", ")})`;
+  let statement: DuckDBPreparedStatement | undefined;
+  let preparedRows = 0;
   try {
-    for (const row of rows) {
-      statement.bind(
-        columns.map((column, i) => {
-          const value = row[column] ?? null;
-          return value !== null && resolvedTypes[i] === "VARCHAR"
-            ? String(value)
-            : value;
-        }),
+    for (let offset = 0; offset < rows.length; offset += batchSize) {
+      const batch = rows.slice(offset, offset + batchSize);
+      if (preparedRows !== batch.length) {
+        statement?.destroySync();
+        statement = undefined;
+        statement = await connection.prepare(
+          `INSERT INTO ${identifier(name)} VALUES ${Array(batch.length).fill(placeholders).join(", ")}`,
+        );
+        preparedRows = batch.length;
+      }
+      statement!.bind(
+        batch.flatMap((row) =>
+          columns.map((column, i) => {
+            const value = cellValue(row, column);
+            return value !== null && resolvedTypes[i] === "VARCHAR"
+              ? String(value)
+              : value;
+          }),
+        ),
       );
-      await statement.run();
+      await statement!.run();
     }
   } finally {
-    statement.destroySync();
+    statement?.destroySync();
   }
 }
 const fileView =
