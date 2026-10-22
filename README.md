@@ -91,6 +91,8 @@ both samples, runtime discovery, SSR, assets, filters and missing-sample errors.
 
 ## Define your project
 
+For an agent-oriented implementation guide with a complete runnable example, see [llms.txt](llms.txt).
+
 Edit [`dashy.config.ts`](dashy.config.ts). Complete runnable projects live in [`samples/`](samples/README.md). Relative `dataDir` values resolve against the selected configuration file.
 
 The Dashy symbol and product name are fixed. Set `name` to your application name,

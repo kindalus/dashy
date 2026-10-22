@@ -1,0 +1,318 @@
+# Dashy
+
+> Plataforma de analytics configurada em TypeScript. Uma implementação define fontes de dados, parâmetros, queries SQL, métricas, datasets e dashboards. O Dashy executa as queries em DuckDB e apresenta filtros, indicadores, gráficos e tabelas numa interface comum.
+
+Este guia destina-se a agentes e programadores que implementam uma solução neste repositório. Os caminhos são relativos à raiz. Os contratos em `core/types.ts` e o código instalado são a referência quando houver diferenças entre documentação e implementação.
+
+## Referências por tarefa
+
+- [README](README.md): instalação, arranque, organização do repositório e API.
+- [Contratos públicos](core/types.ts): campos e tipos aceites por cada artefacto.
+- [Contratos e exemplos](docs/contracts.md): parâmetros, SQL, apresentação, navegação e cores.
+- [Fontes e adapters](docs/sources.md): formatos, limites, tipos e integração de outras fontes.
+- [Temas](docs/themes.md): nomes, cantos e valores por omissão.
+- [Samples](samples/README.md): seleção, criação e distribuição de implementações de exemplo.
+- [Source Examples](samples/source-examples/dashy.config.ts): projeto completo com dados sintéticos nos seis formatos suportados.
+- [Maven Analytics](samples/maven-analytics/dashy.config.ts): projeto completo com dados de retalho, cinco dashboards e filtros variados.
+- [Queries Maven](samples/maven-analytics/queries.ts): SQL separado da configuração de apresentação.
+- [Validação do projeto](core/project.ts): referências, nomes e layouts verificados no arranque.
+- [Helpers SQL](core/sql.ts): construção de predicados com valores ligados separadamente.
+- [Migração](docs/migration.md): mudanças de contratos e comportamento.
+- [Arquitetura e desempenho](docs/performance.md): medições, decisões e limites das otimizações.
+
+## Modelo e sequência de implementação
+
+| Artefacto | Responsabilidade | Referências |
+| --- | --- | --- |
+| Source | Localização e formato dos dados, montados como tabela ou view | Ficheiro ou adapter |
+| Parameter | Tipo, validação, opções e valor por omissão de um filtro | Nome global em `params` |
+| Query | SQL, fontes utilizadas, parâmetros aceites e limite de resultados | Sources e params |
+| Metric | Um valor escalar de uma coluna de uma query | Query |
+| Dataset | Colunas a apresentar, formatos e gráfico opcional | Query |
+| Dashboard | Filtros, blocos, disposição, ícone e grupo de navegação | Metrics, datasets e params |
+
+Um dataset é uma definição de apresentação sobre uma query. Os dados residem nas sources. As métricas referenciam queries diretamente, não datasets. Uma query pode juntar várias fontes e alimentar várias métricas ou datasets.
+
+Para implementar uma solução:
+
+1. Identificar os dados, as colunas, as unidades e as regras de negócio. Definir que valores serão reconciliados para confirmar os resultados.
+2. Configurar as sources e garantir que os caminhos são acessíveis ao servidor.
+3. Registar os parâmetros e declarar quais são usados por cada dashboard e query.
+4. Implementar queries com valores ligados e verificar resultados com filtros, sem resultados e com valores nulos.
+5. Definir métricas, colunas e séries a partir dos nomes devolvidos pelas queries.
+6. Compor dashboards com IDs de bloco únicos, larguras e grupos de navegação.
+7. Configurar identidade da aplicação, tema, locale e, quando necessário, autenticação e roles.
+8. Validar no motor, na API e no browser; depois construir e verificar o pacote de produção.
+
+Normalmente basta alterar a configuração e os módulos da implementação. O renderer já cria páginas, filtros, gráficos, tabelas, spinners e estados de erro.
+
+## Preparação e arranque
+
+O runtime é Bun, incluindo em produção. O `package.json` declara Bun >= 1.3.13 e Node >= 22.12.0 para o ambiente de ferramentas. Usar as dependências fixadas no lockfile. A stack inclui TypeScript, Solid 2, Vite, Nitro, DuckDB, ECharts, ExcelJS e Lucide; Solid e Nitro usam versões prerelease fixadas.
+
+Executar na raiz do projeto:
+
+```sh
+bun install --frozen-lockfile
+bun run dev
+# Abrir http://localhost:3000
+
+bun run dashy samples
+bun run dev --with-sample source-examples
+bun run dev --with-sample maven-analytics --locale en --theme excel --port 3001
+
+bun run build
+bun run start --port 3000
+bun run start --with-sample maven-analytics --locale pt-AO
+bun run dashy --help
+```
+
+Sem `--with-sample`, é carregado o projeto da raiz, inicialmente vazio. A descoberta procura `dashy.config.ts`, depois `.js`, depois `.mjs`. O módulo deve ter um export default com a definição do projeto. Um sample é uma subdiretoria imediata de `samples/` com uma dessas configurações. Selecioná-lo não copia ficheiros nem altera a configuração da raiz.
+
+As opções `--with-sample`, `--theme`, `--locale` e `--port` aplicam-se a `dev` e `start`. Reiniciar após alterar a configuração. Para disponibilizar o comando curto `dashy`, executar `bun link` e garantir que o diretório de executáveis do Bun está no PATH.
+
+## Configuração do projeto
+
+Exportar `defineProject({...})`, importado de `./core/project` numa configuração na raiz. Ajustar o caminho do import quando a configuração estiver noutra pasta.
+
+- `name`: nome da aplicação apresentado abaixo da marca fixa Dashy.
+- `description`: descrição opcional.
+- `dataDir`: diretório dos dados, relativo ao ficheiro de configuração; por omissão, a pasta desse ficheiro.
+- `locale`: formatação de números, moedas e datas. Prioridade: `--locale`, configuração do projeto, `pt`.
+- `theme`: tema e cantos dos controlos.
+- `params`, `sources`, `queries`, `metrics`, `datasets`, `dashboards`: registos obrigatórios, mesmo quando vazios (`{}`).
+- `adapters`: adapters de fontes adicionais, executados no servidor.
+- `authenticate(request)`: integração opcional com a autenticação da aplicação.
+
+Os nomes dos registos começam por uma letra e contêm letras, números, `_` ou `-`. São identificadores estáveis usados nas referências e nos endpoints; `label` é o texto apresentado ao utilizador.
+
+Para projetos maiores, separar `queries.ts`, `datasets.ts`, `metrics.ts` e `dashboards.ts`, exportando objetos tipados com os contratos de `core/types.ts` e compondo-os no `dashy.config.ts`. Os imports locais são incluídos no bundle da configuração. Manter dados e regras da organização nesses módulos.
+
+## Exemplo completo
+
+Criar `data/orders.csv` com estes dados sintéticos, cujos valores já estão em AOA:
+
+```csv
+date,region,revenue,order_id
+2026-01-02,North,1000,1
+2026-01-03,South,2000,2
+2026-02-01,North,3000,3
+```
+
+Usar esta configuração em `dashy.config.ts` na raiz:
+
+```ts
+import { defineProject } from "./core/project";
+import type { Format, QueryContext } from "./core/types";
+
+const money: Format = { style: "currency", currency: "AOA", decimals: 2 };
+
+// Helper da implementação, reutilizado para aplicar os mesmos filtros.
+function salesWhere({ params, sql }: QueryContext) {
+  return sql.where(
+    sql.range('"date"', params.period as { from: string; until: string } | undefined),
+    sql.eq('"region"', params.region as string | undefined),
+  );
+}
+
+export default defineProject({
+  name: "Analytics da aplicação",
+  description: "Vendas por região e mês",
+  dataDir: "./data",
+  locale: "pt",
+  theme: {
+    name: "excel",
+    corners: { inputs: "rounded-sm", buttons: "rounded", panels: "rounded-md" },
+  },
+  params: {
+    period: {
+      label: "Período", type: "range", valueType: "date",
+      default: { from: "2026-01-01", until: "2026-12-31" },
+    },
+    region: {
+      label: "Região", type: "select",
+      options: [
+        { label: "Norte", value: "North" },
+        { label: "Sul", value: "South" },
+      ],
+    },
+  },
+  sources: {
+    orders: { type: "csv", path: "orders.csv" },
+  },
+  queries: {
+    summary: {
+      label: "Resumo", sources: ["orders"], params: ["period", "region"],
+      build: (context) => {
+        const where = salesWhere(context);
+        return {
+          text: `SELECT COALESCE(SUM(revenue), 0) AS revenue,
+                        COUNT(DISTINCT order_id) AS orders
+                 FROM ${context.source("orders")} ${where.text}`,
+          values: where.values,
+        };
+      },
+    },
+    monthly: {
+      label: "Vendas mensais", sources: ["orders"],
+      params: ["period", "region"], maxRows: 240,
+      build: (context) => {
+        const where = salesWhere(context);
+        return {
+          text: `SELECT strftime(CAST("date" AS DATE), '%Y-%m') AS month,
+                        SUM(revenue) AS revenue
+                 FROM ${context.source("orders")} ${where.text}
+                 GROUP BY 1 ORDER BY 1`,
+          values: where.values,
+        };
+      },
+    },
+  },
+  metrics: {
+    revenue: { label: "Receita", query: "summary", column: "revenue", format: money },
+    orders: {
+      label: "Encomendas", query: "summary", column: "orders",
+      format: { style: "number", decimals: 0 },
+    },
+  },
+  datasets: {
+    sales: {
+      label: "Vendas por mês", query: "monthly",
+      columns: [
+        { key: "month", label: "Mês", format: { style: "text" } },
+        { key: "revenue", label: "Receita", format: money },
+      ],
+      chart: {
+        type: "line", x: "month",
+        series: [{ key: "revenue", label: "Receita", format: money }],
+      },
+    },
+  },
+  dashboards: {
+    overview: {
+      label: "Visão geral", icon: "chart-line", group: "Comercial",
+      params: ["period", "region"],
+      blocks: [
+        { id: "revenue", type: "metric", metric: "revenue", width: 3 },
+        { id: "orders", type: "metric", metric: "orders", width: 3 },
+        { id: "sales-chart", type: "dataset", dataset: "sales", width: 6 },
+        { id: "sales-table", type: "dataset", dataset: "sales", view: "table", width: 12 },
+      ],
+    },
+  },
+});
+```
+
+Abrir `/dashboards/overview`. Sem região selecionada, a receita é 6000 e existem 3 encomendas. Com `region=North`, a receita é 4000 e existem 2 encomendas. O gráfico e a tabela usam os mesmos resultados mensais. As quatro apresentações originam dois pedidos de dados: um para `summary` e outro para `monthly`.
+
+## Parâmetros e SQL
+
+Os tipos de parâmetro são `string`, `number`, `boolean`, `date`, `select`, `array` e `range`. Usar `required`, `default` e `description` quando aplicável. Números aceitam `integer`, `min` e `max`; selects declaram `options`; arrays e ranges usam `valueType` (`string`, `number` ou `date`). Arrays aceitam até 250 valores. Datas usam `YYYY-MM-DD`; ranges precisam dos dois extremos.
+
+O registo global define o parâmetro. `dashboard.params` escolhe os filtros visíveis. `query.params` permite esses inputs no SQL. Declarar o filtro nos dois sítios quando deve afetar o dashboard. A correspondência entre parâmetro e coluna é implementada no builder, não inferida pelo motor.
+
+A prioridade é valor enviado, `dashboard.defaults`, `parameter.default`. Um valor vazio limpa um filtro opcional, em vez de reaplicar o default. Valores obrigatórios vazios são rejeitados. Os defaults passam pela mesma validação.
+
+Exemplos HTTP:
+
+```text
+?period.from=2026-01-01&period.until=2026-02-28&region=North
+?productIds=SKU-1&productIds=SKU-2
+?region=
+```
+
+O formulário de arrays aceita uma lista separada por vírgulas e envia chaves repetidas. A API também aceita chaves repetidas diretamente. Parâmetros desconhecidos são rejeitados; enviar apenas os aceites pelo endpoint. Endpoints de dashboard aceitam os filtros do dashboard; endpoints de query, métrica e dataset aceitam os da query subjacente.
+
+Cada builder devolve `{ text, values }`. Usar SQL compatível com DuckDB, `source(name)` para identificar fontes declaradas e `?` para valores ligados. Os helpers `sql.eq`, `sql.in`, `sql.range` e `sql.where` compõem predicados; `sql.fragment` recebe SQL de confiança e os seus valores. `sql` pertence ao próprio Dashy, em `core/sql.ts`. Nomes como `salesWhere` são helpers definidos pela implementação, como no exemplo acima.
+
+Os argumentos de coluna dos helpers são expressões SQL de confiança. Nunca passar nomes de colunas, fragmentos SQL ou caminhos provenientes do pedido sem uma correspondência explícita definida pela aplicação. Valores fornecidos pelo utilizador pertencem a `values`, não à interpolação do texto SQL.
+
+## Fontes e integrações
+
+Fontes nativas: `csv`, `json`, `parquet`, `duckdb`, `sqlite` e `excel` para `.xlsx`. CSV requer cabeçalhos e pode indicar `delimiter`; SQLite/DuckDB requerem `table`; DuckDB aceita `schema`; Excel aceita `sheet` e `headerRow`.
+
+Usar caminhos concretos relativos a `dataDir` com o CLI atual, que verifica a existência de cada caminho no arranque. DuckDB suporta padrões de ficheiros em alguns readers, mas um glob em `source.path` não passa nessa verificação do CLI.
+
+CSV, JSON e Parquet usam os readers nativos do DuckDB. SQLite e Excel importam linhas para a sessão, com `columns` opcional para declarar `VARCHAR`, `DOUBLE`, `BIGINT`, `BOOLEAN`, `DATE` ou `TIMESTAMP`. Esse mapa de tipos aplica-se aos imports SQLite/Excel e a `mountRows`; os readers nativos fazem a sua própria inferência.
+
+Para uma API, base de dados ou formato adicional, implementar um `SourceAdapter` e registá-lo em `project.adapters`. O adapter recebe `{ connection, source, name, path, signal }` e monta uma tabela ou view com o nome indicado. Pode usar `mountRows(connection, name, rows, columns, types, signal)`. Usar `signal` para cancelamento cooperativo e manter credenciais no servidor. Consultar [o contrato e exemplo de adapter](docs/sources.md#add-a-source-adapter) antes de implementar esta extensão.
+
+Limites atuais:
+
+- Queries devolvem até 10.000 linhas por omissão; `maxRows` permite até 100.000. A resposta indica `truncated`.
+- SQLite/Excel importam no máximo 100.000 linhas. Excel aceita ficheiros até 100 MB comprimidos; isso não limita a memória descomprimida.
+- Fórmulas Excel precisam de resultados guardados no workbook. Dashy não recalcula fórmulas. Cabeçalhos devem ser únicos e não vazios.
+- Cada sessão DuckDB tem dois threads e um limite configurado de 512 MB. Esse limite é por pedido, não por servidor.
+- O prazo de uma query é 30 segundos, incluindo a montagem de fontes. Cancelamentos interrompem DuckDB e impedem leituras seguintes. Um parse Excel ou adapter que ignore o sinal só pode ser interrompido nos pontos de verificação disponíveis.
+
+## Apresentação, navegação e temas
+
+Uma métrica exige uma query com no máximo uma linha e a coluna indicada. Uma coluna inexistente, múltiplas linhas ou um resultado truncado são erros. Sem linhas ou com SQL NULL, apresenta `—`; usar `COALESCE` quando a regra de negócio exige zero.
+
+Um dataset declara as colunas visíveis. Essa seleção controla a apresentação; a API pode devolver todas as colunas da query. Selecionar no SQL apenas os dados que podem ser expostos. `chart` é opcional; sem ele, apresenta uma tabela. Os gráficos suportam `line` e `bar`, com várias séries, e permitem alternar para tabela. A tabela pagina oito linhas de cada vez no browser; isso não altera o limite de linhas devolvido pela query.
+
+Os formatos são `number`, `currency`, `percent`, `text` e `date`, com `decimals` opcional. Configurar o formato da coluna para tabelas e o da série para os valores do tooltip. Percentagens usam frações: `0.25` corresponde a 25%. `currency` define explicitamente a moeda, por exemplo `AOA`, `EUR` ou `USD`; se o estilo for `currency` e a moeda estiver omitida, usa USD. `locale` controla a apresentação, não converte moedas nem traduz os textos da interface. A formatação de datas usa UTC.
+
+Os dashboards têm uma grelha de 12 colunas, com `width` entre 1 e 12, e adaptação a ecrãs pequenos. Cada bloco tem um `id` único no dashboard. Um bloco dataset pode definir `view: "table"`. A rota deriva do nome do registo: `/dashboards/<nome>`; `/` abre o primeiro dashboard autorizado.
+
+`group` agrupa dashboards na navegação pela ordem de declaração. Por omissão, o grupo é `Dashboards` e o ícone é `layout-dashboard`. Os ícones são nomes kebab-case da seleção Lucide suportada em [core/icons.ts](core/icons.ts), como `chart-line`, `users`, `store` e `database`. Um ícone `chart-pie` na navegação não acrescenta suporte a gráficos circulares.
+
+Os temas disponíveis são `excel`, `chromeos`, `chatgpt`, `claude-code` e `macos`. O default é Excel. `theme.corners` aceita um estilo comum ou `{ inputs, buttons, panels }`. Os estilos válidos são `none`, `rounded`, `rounded-sm`, `rounded-md` e `rounded-lg`; `rounded` dá formato de pill aos botões. A grafia suportada é `rounded`.
+
+`--theme` substitui o tema configurado e usa os cantos por omissão desse tema nessa execução. Cada tema tem a sua paleta. As séries recebem cores pela posição, repetindo a paleta após seis séries; `chart.series[].color` permite uma cor explícita. Para preservar a mesma cor semântica em gráficos com ordens diferentes, definir essa cor nas séries correspondentes.
+
+## Carregamento de dados e API
+
+A primeira resposta HTML contém estrutura, filtros e labels autorizados. Após hidratação, o browser pede os grupos de dados em paralelo, sempre com os parâmetros aplicados. Blocos que usam a mesma query partilham um pedido e uma execução, mesmo quando referenciam datasets distintos. Queries diferentes têm pedidos e sessões independentes.
+
+Cada grupo disponibiliza os seus blocos assim que termina. Spinners, erros e repetição de pedidos são locais; um erro não impede os grupos bem-sucedidos. Refresh mantém os valores anteriores durante a espera. Mudar filtros cancela pedidos antigos e descarta respostas atrasadas. É necessário JavaScript para carregar os dados.
+
+Endpoints GET:
+
+```text
+/api/catalog
+/api/dashboards/:name
+/api/dashboard-data/:dashboard/:request
+/api/queries/:name
+/api/metrics/:name
+/api/datasets/:name
+```
+
+O catálogo contém metadados de apresentação. Queries e datasets devolvem `{ columns, rows, truncated, durationMs }`; métricas devolvem `{ value }`; o endpoint agregado de dashboard inclui definição, parâmetros, blocos e `generatedAt`. O endpoint independente devolve `{ blocks, generatedAt }`. Os IDs `:request` vêm do plano `dashboard.requests` incluído no HTML, não são nomes arbitrários de datasets.
+
+O endpoint agregado executa as queries sequencialmente numa sessão e reutiliza fontes montadas. Os pedidos independentes do browser não partilham conexões nem resultados entre si ou entre utilizadores. Não existe cache persistente dos resultados; Refresh volta a ler as fontes. As respostas usam `Cache-Control: no-store`.
+
+Alguns números DuckDB são strings na API para preservar a representação exata. Confirmar a precisão exigida ao consumidor; gráficos e formatação numérica na UI convertem valores para números JavaScript.
+
+## Autenticação e permissões
+
+Os samples são públicos. Para uma solução privada, definir `authenticate(request)` no projeto e integrar a sessão ou o fornecedor de identidade da aplicação. Pode ser assíncrono; devolve `{ roles: [...] }` para um utilizador autenticado ou `null` para negar acesso. O hook protege páginas, catálogo e endpoints de dados.
+
+Queries, métricas, datasets e dashboards aceitam `roles`. Uma lista não vazia exige pelo menos uma role correspondente. O acesso tem de ser permitido em cada nível utilizado. Sem roles, esse artefacto não acrescenta uma restrição. Proteger a query quando os próprios dados são privados: restringir apenas um dashboard não restringe o endpoint direto da query. Grupos de navegação não concedem permissões. As roles restringem artefactos, sem implementar isolamento automático por linha ou tenant.
+
+Configurações e builders são código de confiança executado no servidor. Autenticação e credenciais ficam nesse lado. Os pedidos HTTP apenas escolhem artefactos registados e valores de parâmetros; não existe um endpoint de SQL arbitrário.
+
+## Validação e deployment
+
+Antes de entregar uma implementação, confirmar os totais esperados, os filtros em todas as métricas e séries, os casos sem dados, as permissões e os erros. No exemplo deste ficheiro, reconciliar 6000/3 sem região e 4000/2 para North. Verificar também a alternância gráfico/tabela, paginação, Refresh e ecrãs pequenos no browser.
+
+```sh
+bun test
+bun run typecheck
+bun run build
+bun run check:build
+```
+
+Os testes existentes validam o motor e os samples; acrescentar verificações dos resultados e regras específicas da nova solução. `check:build` executa o pacote fora da árvore de código e verifica os cenários incluídos; não substitui a validação dos dados da implementação. Para investigar desempenho, usar `bun scripts/benchmark.ts` e os critérios em `docs/performance.md`.
+
+O build cria `.output/` com servidor, assets, CLI, configuração da raiz e samples. A configuração e os imports locais são compilados. Os dados dos samples são copiados; os dados próprios da configuração da raiz devem ser colocados explicitamente no `dataDir` correspondente dentro do deployment, ou num caminho absoluto acessível. Dependências externas adicionais usadas pela configuração/adapters também têm de estar disponíveis. Os bindings nativos DuckDB devem corresponder ao sistema operativo e à arquitetura de destino.
+
+Na máquina de destino, com Bun instalado, executar dentro de `.output/`:
+
+```sh
+bun dashy.mjs start --port 3000 --locale pt
+# Ou um sample distribuído:
+bun dashy.mjs start --with-sample maven-analytics --theme excel
+```
+
+Alterações ao renderer/motor exigem novo build. Ao distribuir alterações da configuração TypeScript da árvore de código, reconstruir o pacote para atualizar a configuração compilada. Uma configuração de runtime autocontida no deployment pode ser alterada com reinício; selecionar outro sample, tema ou locale no arranque não exige reconstruir o servidor.
