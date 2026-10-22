@@ -41,19 +41,31 @@ The browser checks are manual DevTools verification, not part of `bun test`. Rep
 
 ## Deferred dashboard data
 
-The initial HTML now contains a `DashboardShell` with layout, authorized block
-labels and parsed filters. It contains no metric values or dataset rows. The
-browser fetches the existing dashboard API once after hydration; its response
-contract is unchanged. Each pending block shows a theme-colored spinner, and
-refreshes keep the previous content mounted beneath the loading indicator.
+The initial HTML contains a `DashboardShell` with layout, authorized block labels,
+parsed filters and a request plan. It contains no metric values or dataset rows.
+The browser starts one request per underlying query through
+`GET /api/dashboard-data/:dashboard/:request`, always carrying the applied
+parameters. All blocks sharing that query reuse its response; unrelated results
+render independently. The aggregate dashboard API remains available for clients
+that need a complete dashboard response.
 
-Production verification used an API proxy with a five-second delay to confirm
-that all six Maven panels appear before the data, with only one initial API
-request. Initial and refresh failures stop the spinners and offer retry; refresh
-failures retain the previous results. Filtering preserves chart instance IDs.
-Desktop and 390 px screenshots, reduced-motion behavior and filtered URL reloads
-were checked without hydration errors. Shell tests assert zero query builds and
-source mounts and retain permission/default/parameter validation.
+Spinners, errors and retries are local to the affected blocks. A retry only
+repeats the failed data request. Filters remain usable while loading; a new
+selection aborts obsolete requests and ignores late responses. Refreshes keep
+previous content mounted beneath the loading indicator. No result cache is
+shared between filter selections or users.
+
+Loader tests cover independent completion, one request for shared blocks, query
+parameters, retry deduplication, cancellation and late responses. Engine/HTTP
+tests cover grouped execution, cleared/default filters and authorization.
+
+Production browser checks confirmed that the four Maven metrics appear after
+one shared request while the two chart requests are still pending. An induced
+failure in the monthly chart left the other blocks usable; retry sent only the
+monthly request and kept the other chart's instance. Applying Online and then
+Store while requests were pending cancelled the Online requests and displayed
+only Store results. Every data request included the selected period, country,
+category and channel.
 
 ## Opt-in samples
 

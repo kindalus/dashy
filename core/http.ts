@@ -49,16 +49,21 @@ export function createApiHandler(engine: DashyEngine) {
       let result: unknown;
       if (url.pathname === "/api/catalog") result = engine.catalog(principal);
       else {
-        if (parts.length !== 3 || parts[0] !== "api")
+        const independent = parts[1] === "dashboard-data" && parts.length === 4;
+        if ((!independent && parts.length !== 3) || parts[0] !== "api")
           throw new DashyError("Endpoint not found", 404);
         const params = readParams(url.searchParams, engine.project.params);
         let name: string;
+        let group = "";
         try {
           name = decodeURIComponent(parts[2]!);
+          if (independent) group = decodeURIComponent(parts[3]!);
         } catch {
           throw new DashyError("Invalid endpoint name");
         }
-        if (parts[1] === "dashboards")
+        if (independent)
+          result = await engine.dashboardData(name, group, params, principal);
+        else if (parts[1] === "dashboards")
           result = await engine.dashboard(name, params, principal);
         else if (parts[1] === "datasets")
           result = await engine.dataset(name, params, principal);

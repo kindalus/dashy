@@ -152,6 +152,16 @@ export interface DashboardShell {
   definition: DashboardDefinition;
   params: Params;
   labels: Record<string, string>;
+  /** One request per underlying query, shared by all its consuming blocks. */
+  requests: DashboardRequest[];
+}
+export interface DashboardRequest {
+  id: string;
+  blockIds: string[];
+}
+export interface DashboardData {
+  blocks: BlockResult[];
+  generatedAt: string;
 }
 export interface Catalog {
   name: string;

@@ -90,7 +90,7 @@ try {
         data.dashboard.blocks, undefined, "SSR must not include query results",
       );
       assert.equal(data.dashboard.generatedAt, undefined);
-      assert.ok(html.includes("Loading dashboard…"));
+      assert.ok(html.includes("Loading data"));
       assert.equal(
         (html.match(/class="block-loading"/g) || []).length,
         data.dashboard.definition.blocks.length,
@@ -122,6 +122,14 @@ try {
     assert.equal(data.dashboard.params.channel, "Online");
     assert.equal(Object.keys(data.catalog.dashboards).length, 5);
     assert.equal(data.dashboard.labels.revenue, "Revenue");
+    assert.equal(data.dashboard.requests.length, 3);
+    const independent = await Promise.all(data.dashboard.requests.map(async (group: { id: string }) => {
+      const response = await request(`/api/dashboard-data/overview/${group.id}?country=Canada&channel=Online`);
+      assert.equal(response.status, 200);
+      return response.json();
+    }));
+    assert.equal(independent.flatMap((group) => group.blocks).length, 6);
+    assert.ok(independent.every((group) => group.blocks.every((block: { type: string }) => block.type !== "error")));
     const dashboard = await (
       await request("/api/dashboards/overview?country=Canada&channel=Online")
     ).json();

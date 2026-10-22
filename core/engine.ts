@@ -9,6 +9,11 @@ import type {
   Catalog,
   DashboardResult,
   DashboardShell,
+  DashboardData,
+  DashboardDefinition,
+  DashboardBlock,
+  DashboardRequest,
+  Params,
   Principal,
   ProjectDefinition,
   QueryResult,
@@ -160,7 +165,37 @@ export class DashyEngine {
         ];
       }),
     );
-    return { id: name, definition, params, labels };
+    const groups = new Map<string, DashboardRequest>();
+    for (const block of definition.blocks) {
+      const query = block.type === "metric"
+        ? this.project.metrics[block.metric]!.query
+        : this.project.datasets[block.dataset]!.query;
+      if (!groups.has(query)) groups.set(query, { id: block.id, blockIds: [] });
+      groups.get(query)!.blockIds.push(block.id);
+    }
+    return {
+      id: name, definition, params, labels, requests: [...groups.values()],
+    };
+  }
+
+  async dashboardData(
+    name: string,
+    requestId: string,
+    raw: Record<string, unknown> = {},
+    principal?: Principal,
+  ): Promise<DashboardData> {
+    const { definition, params, requests } = this.dashboardShell(
+      name, raw, principal,
+    );
+    const request = requests.find((group) => group.id === requestId);
+    if (!request) throw new DashyError("Dataset request not found", 404);
+    const selected = new Set(request.blockIds);
+    return this.loadBlocks(
+      definition,
+      params,
+      definition.blocks.filter((block) => selected.has(block.id)),
+      principal,
+    );
   }
 
   async dashboard(
@@ -169,6 +204,18 @@ export class DashyEngine {
     principal?: Principal,
   ): Promise<DashboardResult> {
     const { definition, params } = this.dashboardShell(name, raw, principal);
+    return {
+      id: name, definition, params,
+      ...await this.loadBlocks(definition, params, definition.blocks, principal),
+    };
+  }
+
+  private async loadBlocks(
+    definition: DashboardDefinition,
+    params: Params,
+    selected: readonly DashboardBlock[],
+    principal?: Principal,
+  ): Promise<DashboardData> {
     const session = new QuerySession(this.project, this.adapters);
     try {
       // Request-local memoization shares queries between blocks without leaking results between users.
@@ -194,7 +241,7 @@ export class DashyEngine {
         return results.get(queryName)!;
       };
       const blocks: BlockResult[] = [];
-      for (const block of definition.blocks) {
+      for (const block of selected) {
         try {
           if (block.type === "metric")
             blocks.push({
@@ -224,9 +271,6 @@ export class DashyEngine {
         }
       }
       return {
-        id: name,
-        definition,
-        params,
         blocks,
         generatedAt: new Date().toISOString(),
       };

@@ -15,7 +15,7 @@ sources: {
 
 CSV, JSON and Parquet use DuckDB's native readers. JSON accepts tabular arrays or newline-delimited records. CSV expects a header row. Parquet supports hive partitions. A DuckDB database is attached read-only. SQLite uses Bun's native read-only driver and imports its table into the request's in-memory DuckDB instance. Excel uses ExcelJS, reads the selected worksheet, and imports its rows similarly.
 
-Each standalone query gets its own DuckDB instance. A dashboard uses one instance for its request, executes queries sequentially and mounts each source once. Repeated query results are shared only within that request. Connections close on success or failure; concurrent requests never share a connection or results. A refresh creates a new session and reads sources again. Native file views may read their files for each query; this is not a transactional snapshot of external files.
+Each data request gets its own DuckDB instance. The browser loads independent query groups in parallel; blocks sharing a query share a single request and execution. Different groups do not share source mounts or connections. The aggregate `/api/dashboards/:name` endpoint still uses one instance for its complete response, executes queries sequentially and mounts each source once. Connections close on success or failure; concurrent requests never share a connection or results. A refresh creates new sessions and reads sources again. Native file views may read their files for each query; this is not a transactional snapshot of external files.
 
 ## Limits and data types
 
@@ -39,7 +39,7 @@ Supported explicit types are `VARCHAR`, `DOUBLE`, `BIGINT`, `BOOLEAN`, `DATE` an
 
 ## Add a source adapter
 
-An adapter mounts a table or view on the supplied DuckDB connection. It runs once per source per request; multiple queries in the same dashboard reuse that mount. It owns format-specific reading; the engine still handles queries, parameters, permissions and responses.
+An adapter mounts a table or view on the supplied DuckDB connection. It runs once per source per request; multiple queries within an aggregate dashboard request reuse that mount. Independent browser requests mount their sources separately. It owns format-specific reading; the engine still handles queries, parameters, permissions and responses.
 
 ```ts
 import { DashyEngine } from "../core/engine";

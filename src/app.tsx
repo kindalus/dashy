@@ -11,7 +11,6 @@ import type {
   BlockResult,
   DashboardBlock,
   Catalog,
-  DashboardResult,
   DashboardShell,
   DatasetDefinition,
   ParamDefinition,
@@ -22,70 +21,56 @@ import { Chart } from "./chart";
 import { formatValue } from "./format";
 import { Brand, DashboardNavigation } from "./navigation";
 import { Spinner } from "./spinner";
+import {
+  DashboardLoader, dashboardSearchParams, type DashboardLoads,
+} from "./dashboard-loader";
 
 export interface AppProps {
   catalog: Catalog;
   dashboard: DashboardShell | null;
 }
 export function App(props: AppProps) {
-  const [result, setResult] = createSignal<DashboardResult | null>(null);
-  const [loading, setLoading] = createSignal(Boolean(props.dashboard));
-  const [error, setError] = createSignal("");
-  let activeRequest: AbortController | undefined;
-  let lastQuery = new URLSearchParams();
+  const [loads, setLoads] = createSignal<DashboardLoads>({});
+  const loader = props.dashboard
+    ? new DashboardLoader(props.dashboard, setLoads)
+    : undefined;
+  if (loader) setLoads(loader.state);
   let form!: HTMLFormElement;
   const definition = () => props.dashboard?.definition;
   const locale = () => props.catalog.locale;
   const params = () => props.dashboard?.params || {};
-  const blocks = createMemo(
-    () => new Map(result()?.blocks.map((block) => [block.id, block])),
-  );
-  // Keep this derivation in one scope on both sides of Solid 2 hydration.
+  const groupIds = new Map(props.dashboard?.requests.flatMap(
+    (group) => group.blockIds.map((id) => [id, group.id] as const),
+  ));
+  const stateFor = (id: string) => loads()[groupIds.get(id)!];
+  const blocks = createMemo(() => new Map(
+    Object.values(loads()).flatMap((group) => group.data?.blocks || [])
+      .map((block) => [block.id, block]),
+  ));
   const updateStatus = createMemo(() => {
-    if (loading())
-      return result() ? "Updating dashboard…" : "Loading dashboard…";
-    if (error())
-      return result()
-        ? "Update failed. Showing previous data."
-        : "Dashboard data unavailable";
-    const current = result();
-    if (!current) return "No dashboards configured";
-    return `Updated ${new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }).format(new Date(current.generatedAt))} UTC`;
+    if (!props.dashboard) return "No dashboards configured";
+    const groups = Object.values(loads());
+    const pending = groups.filter((group) => group.loading).length;
+    if (pending) return `Loading data (${groups.length - pending}/${groups.length})…`;
+    if (groups.some((group) =>
+      group.error || group.data?.blocks.some((block) => block.type === "error"),
+    ))
+      return "Some data could not be loaded. Retry the affected panels.";
+    const updated = groups.map((group) => group.data?.generatedAt || "")
+      .sort().at(-1);
+    if (!updated) return "No blocks configured";
+    return `Updated ${new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }).format(new Date(updated))} UTC`;
   });
-  async function load(query: URLSearchParams) {
-    if (!props.dashboard) return;
-    lastQuery = new URLSearchParams(query);
-    activeRequest?.abort();
-    const request = (activeRequest = new AbortController());
-    setLoading(true);
-    setError("");
-    try {
-      const response = await fetch(
-        `/api/dashboards/${encodeURIComponent(props.dashboard.id)}?${query}`,
-        { signal: request.signal },
-      );
-      const body = await response.json();
-      if (!response.ok)
-        throw new Error(body.error || "Unable to load dashboard");
-      if (request !== activeRequest) return;
-      setResult(body);
-      history.replaceState(
-        null,
-        "",
-        `${location.pathname}${query.size ? `?${query}` : ""}`,
-      );
-    } catch (error) {
-      if (!request.signal.aborted && request === activeRequest)
-        setError(
-          error instanceof Error ? error.message : "Unable to load dashboard",
-        );
-    } finally {
-      if (request === activeRequest) setLoading(false);
-    }
+  function load(query: URLSearchParams) {
+    if (!loader) return;
+    history.replaceState(
+      null, "", `${location.pathname}${query.size ? `?${query}` : ""}`,
+    );
+    void loader.load(query);
   }
   onSettled(() => {
-    if (props.dashboard) void load(new URLSearchParams(location.search));
-    return () => activeRequest?.abort();
+    if (props.dashboard) load(dashboardSearchParams(props.dashboard));
+    return () => loader?.dispose();
   });
   function submit(event: SubmitEvent) {
     event.preventDefault();
@@ -152,10 +137,9 @@ export function App(props: AppProps) {
             <Show when={props.dashboard}>
               <button
                 class="button secondary"
-                disabled={loading()}
                 onClick={() => void load(new URLSearchParams(location.search))}
               >
-                {loading() ? "Loading…" : "Refresh"}
+                Refresh
               </button>
             </Show>
           </div>
@@ -179,14 +163,12 @@ export function App(props: AppProps) {
                 <button
                   class="button primary"
                   type="submit"
-                  disabled={loading()}
                 >
                   Apply filters
                 </button>
                 <button
                   class="button text"
                   type="button"
-                  disabled={loading()}
                   onClick={() => {
                     location.href = location.pathname;
                   }}
@@ -196,20 +178,6 @@ export function App(props: AppProps) {
               </div>
             </form>
           </Show>
-          <Show when={error()}>
-            <div class="error-banner" role="alert">
-              <strong>
-                {result() ? "Could not update dashboard" : "Could not load dashboard"}
-              </strong>
-              <span>{error()}</span>
-              <button
-                class="button secondary"
-                onClick={() => void load(lastQuery)}
-              >
-                Try again
-              </button>
-            </div>
-          </Show>
           <div class="update-status" role="status" aria-live="polite">
             {updateStatus()}
           </div>
@@ -217,7 +185,6 @@ export function App(props: AppProps) {
           <section
             class="dashboard-grid"
             aria-label="Dashboard results"
-            aria-busy={loading() ? "true" : "false"}
           >
             <For each={definition()?.blocks || []} keyed={(block) => block.id}>
               {(layout) => (
@@ -225,7 +192,9 @@ export function App(props: AppProps) {
                   block={blocks().get(layout().id)}
                   layout={layout()}
                   label={props.dashboard!.labels[layout().id]!}
-                  loading={loading()}
+                  loading={stateFor(layout().id)?.loading ?? false}
+                  loadError={stateFor(layout().id)?.error || ""}
+                  retry={() => void loader?.retry(groupIds.get(layout().id)!)}
                   locale={locale()}
                 />
               )}
@@ -241,6 +210,8 @@ function DashboardCard(props: {
   layout: DashboardBlock;
   label: string;
   loading: boolean;
+  loadError: string;
+  retry: () => void;
   locale: string;
 }) {
   const metric = () =>
@@ -260,9 +231,6 @@ function DashboardCard(props: {
       <Show when={!props.block}>
         <div class="block-placeholder">
           <h2>{props.label}</h2>
-          <Show when={!props.loading}>
-            <p class="empty-state">Data unavailable. Use Try again to reload.</p>
-          </Show>
         </div>
       </Show>
       <div
@@ -275,6 +243,7 @@ function DashboardCard(props: {
             <div class="block-error">
               <h2>Block unavailable</h2>
               <p>{block().message}</p>
+              <button class="button secondary" onClick={props.retry}>Try again</button>
             </div>
           )}
         </Show>
@@ -308,6 +277,13 @@ function DashboardCard(props: {
           )}
         </Show>
       </div>
+      <Show when={props.loadError && !props.loading}>
+        <div class="block-error" role="alert">
+          <p>{props.loadError}</p>
+          <Show when={props.block}><p>Showing previous data.</p></Show>
+          <button class="button secondary" onClick={props.retry}>Try again</button>
+        </div>
+      </Show>
       <Show when={props.loading}>
         <div class="block-loading">
           <Spinner />

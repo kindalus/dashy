@@ -3,10 +3,14 @@
 Dashy renders dashboards defined in TypeScript. The engine reads SQLite, CSV, JSON, Excel `.xlsx`, DuckDB and Parquet sources, executes registered SQL queries, and presents metrics, charts and tables. Project definitions live outside the engine.
 
 Pages initially contain the dashboard layout, labels and filters, without running
-data queries. After hydration, the browser loads all results in one dashboard API
-request. Each metric and panel shows a theme-colored spinner while waiting.
-Refreshes retain the previous data beneath a loading indicator; failed requests
-offer a retry. JavaScript is required to load the data. Authentication, dashboard
+data queries. After hydration, the browser requests each independent dataset in
+parallel, including the applied parameters. Metrics and charts sharing an
+underlying query share one request, even when their presentation definitions
+differ. Each block displays its result as soon as that request completes, with a
+theme-colored spinner only while its own data is pending. Refreshes retain the
+previous data beneath a loading indicator; failed requests offer a local retry
+without reloading successful panels. New filters cancel obsolete requests and
+discard their late responses. JavaScript is required to load the data. Authentication, dashboard
 permissions and URL parameters are checked before sending the initial page and
 again when requesting its data.
 
@@ -144,12 +148,19 @@ All endpoints are `GET` and share the project's authentication hook:
 ```text
 /api/catalog
 /api/dashboards/:name
+/api/dashboard-data/:dashboard/:request
 /api/metrics/:name
 /api/datasets/:name
 /api/queries/:name
 ```
 
 Ranges use `?period.from=2026-01-01&period.until=2026-06-30`. Arrays use repeated keys. Unknown parameters are rejected. Responses are not cached by shared HTTP caches. Within one dashboard request, a query used by several blocks runs once.
+
+The initial page includes request IDs and their consuming block IDs. A
+`dashboard-data` request returns only that group's blocks and a timestamp; it
+validates the dashboard parameters and all block/query permissions. The browser
+deduplicates within the current dashboard and filter selection, without sharing
+results between users or reusing stale results after filters change.
 
 ## Framework references
 
