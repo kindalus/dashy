@@ -6,6 +6,15 @@ export function defineProject<const T extends ProjectDefinition>(
   project: T,
 ): T {
   resolveTheme(project.theme);
+  if (project.locale !== undefined) {
+    try {
+      if (typeof project.locale !== "string" || !project.locale)
+        throw new Error();
+      Intl.getCanonicalLocales(project.locale);
+    } catch {
+      throw new Error("Invalid Dashy project: locale must be a language tag such as pt, en or pt-AO.");
+    }
+  }
   const assert = (condition: unknown, message: string) => {
     if (!condition) throw new Error(`Invalid Dashy project: ${message}`);
   };

@@ -17,6 +17,7 @@ try {
       request: (path: string, method?: string) => Promise<Response>,
     ) => Promise<void>,
     theme?: string,
+    locale?: string,
   ) {
     const reservation = Bun.serve({
       port: 0,
@@ -34,6 +35,7 @@ try {
         String(port),
         ...(sample ? ["--with-sample", sample] : []),
         ...(theme ? ["--theme", theme] : []),
+        ...(locale ? ["--locale", locale] : []),
       ],
       { cwd: directory, stdout: "pipe", stderr: "pipe" },
     );
@@ -85,6 +87,8 @@ try {
     assert.equal((await request("/", "POST")).status, 405);
     assert.equal(await (await request("/", "HEAD")).text(), "");
     const data = JSON.parse(bootstrap[1]!);
+    assert.ok(html.includes(`lang="${data.catalog.locale.split("-")[0]}"`));
+    assert.equal((await (await request("/api/catalog")).json()).locale, data.catalog.locale);
     if (data.dashboard) {
       assert.equal(
         data.dashboard.blocks, undefined, "SSR must not include query results",
@@ -111,6 +115,7 @@ try {
     assert.deepEqual(data.catalog.dashboards, {});
     assert.deepEqual(data.catalog.params, {});
     assert.equal(data.dashboard, null);
+    assert.equal(data.catalog.locale, "pt");
     assert.equal((await request("/api/queries/summary")).status, 404);
   });
   await withServer("maven-analytics", async (request) => {
@@ -119,6 +124,7 @@ try {
       "/dashboards/overview?country=Canada&channel=Online",
     );
     assert.equal(data.dashboard.params.country, "Canada");
+    assert.equal(data.catalog.locale, "pt");
     assert.equal(data.dashboard.params.channel, "Online");
     assert.equal(Object.keys(data.catalog.dashboards).length, 5);
     assert.equal(data.dashboard.labels.revenue, "Revenue");
@@ -194,6 +200,17 @@ try {
       "Added at runtime",
     );
   });
+  // Locale selection must reach both the API and the hydration data.
+  await writeFile(
+    join(directory, "samples/runtime-added/dashy.config.js"),
+    `export default { name: 'Locale check', locale: 'pt-AO', params: {}, sources: {}, queries: {}, datasets: {}, metrics: {}, dashboards: {} };`,
+  );
+  await withServer("runtime-added", async (request) => {
+    assert.equal((await checkPage(request)).catalog.locale, "pt-AO");
+  });
+  await withServer("runtime-added", async (request) => {
+    assert.equal((await checkPage(request)).catalog.locale, "en");
+  }, undefined, "en");
   // Theme selection is runtime configuration and must reach HTML before paint.
   for (const name of themeNames) {
     const theme = { name, corners: { buttons: "rounded" as const } };

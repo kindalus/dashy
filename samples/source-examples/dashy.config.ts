@@ -66,7 +66,6 @@ const sourceDatasets = Object.fromEntries(
 export default defineProject({
   name: "Source examples",
   description: "A workspace for your data",
-  locale: "en-GB",
   dataDir: fileURLToPath(new URL("./data", import.meta.url)),
   params: {
     period: {

@@ -51,7 +51,7 @@ export class DashyEngine {
       name: p.name,
       theme: resolveTheme(p.theme),
       description: p.description,
-      locale: p.locale || "en-GB",
+      locale: p.locale ?? "pt",
       params: p.params,
       dashboards: Object.fromEntries(
         Object.entries(p.dashboards).filter(([, d]) =>

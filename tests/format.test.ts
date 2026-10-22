@@ -33,8 +33,10 @@ test("format reuse preserves locale, style, currency and precision across many c
             ),
           ).toBe(new Intl.NumberFormat(locale, options).format(1234.567));
         }
-  expect(formatValue(0.25, { style: "percent", decimals: 1 })).toBe("25.0%");
-  expect(formatValue(12.5, { style: "currency" })).toBe("US$12.5");
+  expect(formatValue(0.25, { style: "percent", decimals: 1 })).toBe("25,0%");
+  expect(formatValue(12.5, { style: "currency" })).toBe("US$\u00a012,5");
+  expect(formatValue(1234.56)).toBe("1.234,56");
+  expect(formatValue(1234.56, {}, "en")).toBe("1,234.56");
   expect(formatValue(12.5, { decimals: 0 })).toBe("13");
 });
 

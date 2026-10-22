@@ -5,7 +5,7 @@ import { parseArgs } from "node:util";
 import { listSamples, loadProject, selectConfig } from "../core/runtime";
 import { themeNames } from "../core/theme";
 
-const help = `Usage: dashy <start|dev|samples> [--with-sample <name>] [--theme <name>] [--port <number>]
+const help = `Usage: dashy <start|dev|samples> [--with-sample <name>] [--theme <name>] [--locale <tag>] [--port <number>]
 
   start     Start the production build (run bun run build first)
   dev       Start Vite for development
@@ -14,6 +14,7 @@ const help = `Usage: dashy <start|dev|samples> [--with-sample <name>] [--theme <
 Without --with-sample, Dashy loads ./dashy.config.ts (empty by default).
 Samples are read in place. Your project configuration is never overwritten.
 --theme selects a theme and its default corners for this run.
+--locale overrides the project's formatting locale (default: pt).
 Themes: ${themeNames.join(", ")}.
 Run from the project root, or from a deployed .output directory.`;
 
@@ -25,6 +26,7 @@ async function main() {
     options: {
       "with-sample": { type: "string" },
       theme: { type: "string" },
+      locale: { type: "string" },
       port: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
@@ -44,10 +46,11 @@ async function main() {
     if (
       values["with-sample"] !== undefined ||
       values.port !== undefined ||
-      values.theme !== undefined
+      values.theme !== undefined ||
+      values.locale !== undefined
     )
       throw new Error(
-        "The samples command does not accept --with-sample, --theme or --port.",
+        "The samples command does not accept --with-sample, --theme, --locale or --port.",
       );
     console.log(
       (await listSamples(root)).join("\n") || "No samples found in ./samples.",
@@ -62,7 +65,7 @@ async function main() {
   )
     throw new Error("--port must be an integer between 1 and 65535.");
   const config = await selectConfig(root, values["with-sample"]);
-  const project = await loadProject(config, values.theme);
+  const project = await loadProject(config, values.theme, values.locale);
   for (const source of Object.values(project.sources)) {
     if (
       ["csv", "json", "excel", "sqlite", "duckdb", "parquet"].includes(
@@ -79,6 +82,7 @@ async function main() {
     ...process.env,
     DASHY_CONFIG: config,
     DASHY_THEME: values.theme ?? "",
+    DASHY_LOCALE: project.locale!,
   };
   let args: string[];
   if (command === "dev") {

@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { listSamples, loadProject, selectConfig } from "../core/runtime";
+import { DashyEngine } from "../core/engine";
 
 const root = await mkdtemp(join(tmpdir(), "dashy-runtime-"));
 const empty = {
@@ -28,6 +29,7 @@ afterAll(() => rm(root, { recursive: true, force: true }));
 
 test("default project ships with no sources, queries, metrics, datasets or dashboards", async () => {
   const project = await loadProject(await selectConfig(process.cwd()));
+  expect(project.locale).toBe("pt");
   for (const name of [
     "params",
     "sources",
@@ -111,6 +113,26 @@ async function cli(args: string[], cwd = root) {
   return { code, out, err };
 }
 
+test("locale defaults to pt and runtime selection overrides project configuration without changing it", async () => {
+  const path = join(root, "localized.ts");
+  const original = config("Localized", { locale: "pt-AO" });
+  await writeFile(path, original);
+  expect((await loadProject(path)).locale).toBe("pt-AO");
+  expect((await loadProject(path, undefined, "en")).locale).toBe("en");
+  expect((await loadProject(path)).locale).toBe("pt-AO");
+  expect(await readFile(path, "utf8")).toBe(original);
+  expect((await loadProject(join(root, "dashy.config.ts"))).locale).toBe("pt");
+  expect(new DashyEngine(empty).catalog().locale).toBe("pt");
+  for (const locale of ["", "en_US", "not a locale"]) {
+    await expect(loadProject(path, undefined, locale)).rejects.toThrow("locale must be a language tag");
+    for (const command of ["dev", "start"]) {
+      const result = await cli([command, `--locale=${locale}`]);
+      expect(result.code).toBe(1);
+      expect(result.err).toContain("locale must be a language tag");
+    }
+  }
+});
+
 test("CLI lists the filesystem samples and rejects missing names and invalid arguments", async () => {
   expect(await cli(["samples"])).toEqual({
     code: 0,
@@ -138,6 +160,9 @@ test("CLI lists the filesystem samples and rejects missing names and invalid arg
     ["start", "--theme"],
     ["dev", "--theme"],
     ["samples", "--theme", "excel"],
+    ["start", "--locale"],
+    ["dev", "--locale"],
+    ["samples", "--locale", "en"],
     ["start", "extra"],
   ])
     expect((await cli(args)).code).toBe(1);

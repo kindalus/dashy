@@ -61,6 +61,20 @@ Run commands from the project root. Production requires a build; sample selectio
 happens at runtime, so changing samples does not require rebuilding. Config edits
 require restarting the server. `--port` chooses the listening port.
 
+Formatting uses `pt` by default, including the samples. Set `locale` in
+`dashy.config.ts` for a project default, or override it for one run:
+
+```sh
+bun run dev --locale en
+bun run start --with-sample maven-analytics --locale pt-AO
+# From a deployed .output directory:
+bun dashy.mjs start --locale en
+```
+
+Precedence is `--locale`, then the project's `locale`, then `pt`. The option
+formats numbers, currencies and dates; it does not translate interface text
+or change currencies. Invalid language tags fail before the server starts.
+
 Deploy the `.output` directory with Bun installed. From that directory:
 
 ```sh

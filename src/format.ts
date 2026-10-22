@@ -16,7 +16,7 @@ function cached<T>(cache: Map<string, T>, key: string, create: () => T): T {
 export function formatValue(
   value: Scalar | undefined,
   format: Format = {},
-  locale = "en-GB",
+  locale = "pt",
 ): string {
   if (value === null || value === undefined) return "—";
   if (format.style === "text" || typeof value === "boolean")

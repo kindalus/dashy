@@ -18,6 +18,7 @@ const project = process.env.DASHY_CONFIG
   ? await loadProject(
       process.env.DASHY_CONFIG,
       process.env.DASHY_THEME || undefined,
+      process.env.DASHY_LOCALE || undefined,
     )
   : defaultProject;
 const engine = new DashyEngine(project);

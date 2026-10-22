@@ -74,6 +74,7 @@ export async function selectConfig(
 export async function loadProject(
   configPath: string,
   theme?: string,
+  locale?: string,
 ): Promise<ProjectDefinition> {
   const path = resolve(configPath);
   const module = await import(/* @vite-ignore */ pathToFileURL(path).href);
@@ -93,6 +94,7 @@ export async function loadProject(
   }
   const project = defineProject({
     ...module.default,
+    locale: locale ?? module.default.locale ?? "pt",
     ...(theme === undefined
       ? {}
       : { theme: resolveTheme({ name: theme as ThemeName }) }),

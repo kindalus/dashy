@@ -44,7 +44,6 @@ const metrics: Record<string, MetricDefinition> = Object.fromEntries(
 export default defineProject({
   name: "Maven Electronics",
   description: "Global electronics retailer · sample data",
-  locale: "en-GB",
   dataDir: "./data",
   params: {
     period: {
