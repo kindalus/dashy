@@ -90,8 +90,11 @@ bun dashy.mjs start --with-sample maven-analytics
 The output includes the CLI, page manifest, bundled selected configuration and
 artifacts, compiled custom pages, samples and registered relative source files.
 Absolute sources stay external. Runtime configurations kept outside the build
-need their own installed dependencies. Native
-DuckDB bindings must match the deployment OS and architecture.
+need their own installed dependencies. Native DuckDB bindings must match the
+deployment OS and architecture. Dashy pins
+DuckDB 2.0.0 LTS through `@duckdb/node-api@2.0.0-r.1`. New `.duckdb` files
+created with 2.0 cannot be opened by older DuckDB versions; check any other
+process that shares those files before upgrading it.
 `check:build` runs this deployment in isolation and checks the empty workspace,
 Source Examples, runtime discovery, SSR, assets, filters and missing-sample errors.
 After building Maven, `bun scripts/check-build.ts --maven` checks its dashboards,
