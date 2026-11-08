@@ -157,15 +157,16 @@ try {
     assert.equal(data.dashboard.params.country, "Canada");
     assert.equal(data.catalog.locale, "pt");
     assert.equal(data.dashboard.params.channel, "Online");
-    assert.equal(Object.keys(data.catalog.dashboards).length, 5);
+    assert.equal(Object.keys(data.catalog.dashboards).length, 7);
     assert.equal(data.dashboard.labels.revenue, "Revenue");
-    assert.equal(data.dashboard.requests.length, 3);
+    // summary, catalogue, monthly and categories (shared by two blocks).
+    assert.equal(data.dashboard.requests.length, 4);
     const independent = await Promise.all(data.dashboard.requests.map(async (group: { id: string }) => {
       const response = await request(`/api/dashboard-data/overview/${group.id}?country=Canada&channel=Online`);
       assert.equal(response.status, 200);
       return response.json();
     }));
-    assert.equal(independent.flatMap((group) => group.blocks).length, 6);
+    assert.equal(independent.flatMap((group) => group.blocks).length, 7);
     assert.ok(independent.every((group) => group.blocks.every((block: { type: string }) => block.type !== "error")));
     const dashboard = await (
       await request("/api/dashboards/overview?country=Canada&channel=Online")
@@ -195,6 +196,19 @@ try {
       (await request("/api/queries/summary?country=invalid")).status,
       400,
     );
+    // Phase 1 contracts in the packaged runtime: probe, options, shells and drillthrough.
+    assert.deepEqual(await (await request("/healthz")).json(), { status: "ok" });
+    const products = await (await request("/api/params/productName/options?_q=contoso%20wireless")).json();
+    assert.ok(products.options.length > 0 && products.options.every((o: { label: string }) => /contoso wireless/i.test(o.label)));
+    const brands = await (await request("/api/params/brand/options?category=Audio")).json();
+    assert.deepEqual(brands.options.map((o: { value: string }) => o.value), ["Contoso", "Northwind Traders", "Wide World Importers"]);
+    const shell = await (await request("/api/dashboard-shell/overview?category=Audio&_xf=categories:category")).json();
+    assert.deepEqual(shell.crossFilters, [{ block: "categories", param: "category" }]);
+    const required = await (await request("/api/dashboard-shell/product-detail")).json();
+    assert.deepEqual(required.missing, ["productName"]);
+    assert.equal(required.requests.length, 0);
+    const detailPage = await request("/dashboards/product-detail?productName=Contoso%20Wireless%20Laser%20Mouse%20E50%20Grey&_from=%2Fdashboards%2Fproducts");
+    assert.equal(detailPage.status, 200);
   });
   if (!mavenOnly) {
     // Custom components must be compiled for the chosen implementation.

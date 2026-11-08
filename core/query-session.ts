@@ -1,7 +1,8 @@
-import { DuckDBInstance, type DuckDBConnection } from "@duckdb/node-api";
+import type { DuckDBConnection } from "@duckdb/node-api";
 import { resolve } from "node:path";
 import { mountSource, type SourceAdapter } from "./sources";
 import { DashyError } from "./params";
+import { poolFor, type DatabasePool, type Lease } from "./pool";
 import type {
   ProjectDefinition,
   QueryResult,
@@ -9,32 +10,19 @@ import type {
   SqlStatement,
 } from "./types";
 
-/** One request owns one lazy database. Its queries run sequentially and share
- * mounted sources, but nothing survives the request or crosses principals. */
+/** One request owns one lazy pooled connection. Its queries run sequentially and
+ * share mounted sources; closing the connection drops them, so nothing survives
+ * the request or crosses principals. */
 export class QuerySession {
-  private database?: ReturnType<QuerySession["open"]>;
+  private lease?: Promise<Lease>;
   private mounted = new Map<string, Promise<void>>();
 
   constructor(
     private project: ProjectDefinition,
     private adapters: Record<string, SourceAdapter>,
     private signal?: AbortSignal,
+    private pool: DatabasePool = poolFor(project),
   ) {}
-
-  private async open() {
-    const instance = await DuckDBInstance.create(":memory:", {
-      threads: "2",
-      memory_limit: "512MB",
-      autoinstall_known_extensions: "false",
-      autoload_known_extensions: "false",
-    });
-    try {
-      return { instance, connection: await instance.connect() };
-    } catch (error) {
-      instance.closeSync();
-      throw error;
-    }
-  }
 
   async run(
     sources: readonly string[],
@@ -55,10 +43,11 @@ export class QuerySession {
     signal.addEventListener("abort", interrupt, { once: true });
     const timer = setTimeout(() => deadline.abort(
       new DashyError("Query timed out", 504),
-    ), 30_000);
+    ), this.pool.limits.queryTimeoutMs);
     try {
       check();
-      connection = (await (this.database ??= this.open())).connection;
+      const lease = await (this.lease ??= this.pool.acquire(signal));
+      connection = lease.connection;
       check();
       for (const name of sources) {
         if (!this.mounted.has(name))
@@ -71,6 +60,7 @@ export class QuerySession {
               resolve(this.project.dataDir || "."),
               this.adapters,
               signal,
+              { id: lease.id, onRelease: (cleanup) => this.pool.onRelease(lease.id, cleanup) },
             ),
           );
         await this.mounted.get(name);
@@ -99,13 +89,9 @@ export class QuerySession {
   }
 
   async close(): Promise<void> {
-    // open() already cleans up when connecting fails; preserve the original error.
-    const database = await this.database?.catch(() => undefined);
-    if (!database) return;
-    try {
-      database.connection.closeSync();
-    } finally {
-      database.instance.closeSync();
-    }
+    // A failed acquire already released its slot; preserve the original error.
+    const lease = await this.lease?.catch(() => undefined);
+    this.lease = undefined;
+    await lease?.release();
   }
 }

@@ -1,16 +1,26 @@
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { stat } from "node:fs/promises";
+import { DashyError } from "./params";
 import type { DuckDBConnection } from "@duckdb/node-api";
 import { setImmediate } from "node:timers/promises";
 import type { SourceDefinition, Row } from "./types";
 import { identifier, literal } from "./sql";
 
+export interface AdapterScope {
+  /** Unique for the request's connection lease. */
+  id: string;
+  /** Runs on the same connection before it closes, e.g. to DETACH. */
+  onRelease(cleanup: (connection: DuckDBConnection) => Promise<void>): void;
+}
 export interface AdapterContext {
   connection: DuckDBConnection;
   source: SourceDefinition;
   name: string;
   path: string;
   signal?: AbortSignal;
+  /** Present when mounted by the engine. Connections share one DuckDB instance,
+   * so instance-wide objects (ATTACH) need unique names and cleanup. */
+  scope?: AdapterScope;
 }
 /** Register another format by mounting a view/table named context.name. */
 export type SourceAdapter = (context: AdapterContext) => Promise<void>;
@@ -87,13 +97,57 @@ export async function mountRows(
     appender.closeSync();
   }
 }
+const globCharacters = /[*?[{]/;
+export const isGlob = (path: string) => globCharacters.test(path);
+
+/** Split a resolved glob into its static directory and the pattern below it. */
+function splitGlob(path: string): { base: string; pattern: string } {
+  const parts = path.split(sep);
+  const index = parts.findIndex((part) => isGlob(part));
+  return { base: parts.slice(0, index).join(sep) || sep, pattern: parts.slice(index).join("/") };
+}
+
+/** Resolve a configured path. Globs must stay inside dataDir; plain paths keep
+ * the existing contract, where absolute sources live outside the project. */
+export function resolveSourcePath(dataDir: string, path: string): string {
+  const resolved = resolve(dataDir, path);
+  if (isGlob(path)) {
+    const inside = relative(resolve(dataDir), resolved);
+    if (isAbsolute(path) || path.split(/[\\/]/).includes("..") || inside.startsWith("..") || isAbsolute(inside))
+      throw new Error(`Glob source paths must be relative to dataDir: ${path}`);
+  }
+  return resolved;
+}
+
+/** True when a plain path exists or a glob matches at least one file. */
+export async function sourceHasFiles(path: string): Promise<boolean> {
+  if (!isGlob(path)) {
+    try { await stat(path); return true; } catch { return false; }
+  }
+  const { base, pattern } = splitGlob(path);
+  try {
+    if (!(await stat(base)).isDirectory()) return false;
+  } catch { return false; }
+  for await (const _ of new Bun.Glob(pattern).scan({ cwd: base, onlyFiles: true })) return true;
+  return false;
+}
+
 const fileView =
   (reader: string, options = ""): SourceAdapter =>
   async ({ connection, name, path }) => {
+    // DuckDB reports a missing glob with its full path; answer without leaking it.
+    if (isGlob(path) && !(await sourceHasFiles(path)))
+      throw new DashyError(`Data unavailable for source ${name}`, 503);
     await connection.run(
       `CREATE TEMP VIEW ${identifier(name)} AS SELECT * FROM ${reader}(${literal(path)}${options})`,
     );
   };
+const hiveTypes = new Set(["VARCHAR", "INTEGER", "BIGINT", "DOUBLE", "DATE", "TIMESTAMP", "BOOLEAN"]);
+function hiveType(type: string): string {
+  if (!hiveTypes.has(type)) throw new Error(`Unsupported hive type: ${type}`);
+  return type;
+}
+export const hiveTypeNames = [...hiveTypes];
 export const builtInAdapters: Record<string, SourceAdapter> = {
   csv: async (context) => {
     const delimiter = context.source.delimiter;
@@ -103,11 +157,20 @@ export const builtInAdapters: Record<string, SourceAdapter> = {
     )(context);
   },
   json: fileView("read_json_auto"),
-  parquet: fileView("read_parquet", ", hive_partitioning = true"),
-  duckdb: async ({ connection, name, source, path }) => {
+  parquet: async (context) => {
+    const { hive, unionByName } = context.source;
+    const options = [`hive_partitioning = ${hive === false ? "false" : "true"}`];
+    if (hive && hive.types && Object.keys(hive.types).length)
+      options.push(`hive_types = {${Object.entries(hive.types).map(([column, type]) => `${literal(column)}: ${hiveType(type)}`).join(", ")}}`);
+    if (unionByName) options.push("union_by_name = true");
+    await fileView("read_parquet", `, ${options.join(", ")}`)(context);
+  },
+  duckdb: async ({ connection, name, source, path, scope }) => {
     if (!source.table) throw new Error(`DuckDB source ${name} requires table`);
-    const catalog = identifier(`db_${name}`);
+    // ATTACH is instance-wide: concurrent leases need distinct aliases.
+    const catalog = identifier(`db_${name}_${scope?.id ?? crypto.randomUUID().replaceAll("-", "")}`);
     await connection.run(`ATTACH ${literal(path)} AS ${catalog} (READ_ONLY)`);
+    scope?.onRelease(async (released) => { await released.run(`DETACH DATABASE IF EXISTS ${catalog}`); });
     await connection.run(
       `CREATE TEMP VIEW ${identifier(name)} AS SELECT * FROM ${catalog}.${identifier(source.schema || "main")}.${identifier(source.table)}`,
     );
@@ -214,11 +277,12 @@ export async function mountSource(
   dataDir: string,
   adapters: Record<string, SourceAdapter>,
   signal?: AbortSignal,
+  scope?: AdapterScope,
 ): Promise<void> {
   signal?.throwIfAborted();
   const adapter = adapters[source.type];
   if (!adapter)
     throw new Error(`No adapter registered for source type: ${source.type}`);
-  const path = resolve(dataDir, source.path);
-  await adapter({ connection, source, name, path, signal });
+  const path = resolveSourcePath(dataDir, source.path);
+  await adapter({ connection, source, name, path, signal, scope });
 }

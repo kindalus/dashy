@@ -1,6 +1,7 @@
 import { cp, mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { listSamples, loadImplementation } from "../core/runtime";
+import { isGlob, resolveSourcePath, sourceHasFiles } from "../core/sources";
 import { findExtensionRegistries, findRegistry, resolveLocations, type ProjectLocations } from "../core/locations";
 
 const root = process.cwd();
@@ -15,6 +16,7 @@ async function bundle(entry: string, outfile: string, code?: string) {
     external: ["@duckdb/node-api", "exceljs"],
     plugins: [{ name: "dashy-runtime-package", setup(build) {
       build.onResolve({ filter: /^dashy$/ }, () => ({ path: sdk }));
+      build.onResolve({ filter: /^dashy\/auth$/ }, () => ({ path: resolve(root, "core/auth/index.ts") }));
       build.onResolve({ filter: /^dashy\/internal\/import-config$/ }, () => ({ path: resolve(root, "core/import-config.mjs") }));
       if (code !== undefined) {
         build.onResolve({ filter: /^dashy:config$/ }, () => ({ path: "config", namespace: "dashy" }));
@@ -27,6 +29,10 @@ async function bundle(entry: string, outfile: string, code?: string) {
   await Bun.write(outfile, result.outputs[0]!);
 }
 
+function globDirectory(path: string): string {
+  const parts = path.split("/");
+  return parts.slice(0, parts.findIndex((part) => isGlob(part))).join("/") || ".";
+}
 const locations = await resolveLocations();
 const project = await loadImplementation(locations);
 async function bundleImplementation(locations: ProjectLocations, outfile: string, portableData = false) {
@@ -51,10 +57,16 @@ await Bun.write(".output/pages.json", JSON.stringify(Object.fromEntries(
 // Copy only registered relative local files. Absolute sources remain external.
 for (const source of Object.values(project.sources)) {
   if (!["csv", "json", "excel", "sqlite", "duckdb", "parquet"].includes(source.type) || isAbsolute(source.path)) continue;
-  const target = resolve(".output/data", source.path);
-  if (!target.startsWith(resolve(".output/data") + "/")) throw new Error(`Cannot package source outside data directory: ${source.path}. Use an absolute external source path.`);
+  // A glob packages its static directory; an absent tree is supplied at runtime (DASHY_DATA_DIR).
+  const path = isGlob(source.path) ? globDirectory(source.path) : source.path;
+  const target = resolve(".output/data", path);
+  if (target !== resolve(".output/data") && !target.startsWith(resolve(".output/data") + "/")) throw new Error(`Cannot package source outside data directory: ${source.path}. Use an absolute external source path.`);
+  if (isGlob(source.path) && !(await sourceHasFiles(resolveSourcePath(project.dataDir!, source.path)))) {
+    console.warn(`[dashy] Not packaging ${source.path}: no matching files. Mount the data directory at runtime with DASHY_DATA_DIR.`);
+    continue;
+  }
   await mkdir(dirname(target), { recursive: true });
-  await cp(resolve(project.dataDir!, source.path), target, { recursive: true });
+  await cp(resolve(project.dataDir!, path), target, { recursive: true });
 }
 for (const name of await listSamples(root)) {
   const source = join("samples", name);

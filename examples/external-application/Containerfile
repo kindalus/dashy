@@ -1,0 +1,35 @@
+# Project image template. Build the base first, from the Dashy installation:
+#
+#   podman build -t localhost/dashy-base:0.3.0 -f Containerfile /opt/dashy
+#   podman build -t localhost/my-dashboards -f Containerfile .
+#
+# Run it with the data mounted read-only and secrets in the environment:
+#
+#   podman run -d -p 127.0.0.1:3000:3000 -v /srv/lake:/data:ro \
+#     -e SESSION_SECRET=... localhost/my-dashboards
+ARG DASHY_BASE=localhost/dashy-base:0.3.0
+FROM ${DASHY_BASE} AS build
+
+COPY . /srv/app
+WORKDIR /srv/app
+# The project imports "dashy", "dashy/auth" and "dashy/ui" from the installation.
+RUN mkdir -p node_modules && rm -rf node_modules/dashy && ln -s /opt/dashy node_modules/dashy \
+ && if [ -f bun.lock ]; then bun install --frozen-lockfile; fi
+ENV DASHY_PROJECT_DIR=/srv/app
+RUN bun /opt/dashy/bin/dashy.ts build
+
+FROM docker.io/oven/bun:1.4.0-slim
+WORKDIR /app
+COPY --from=build --chown=bun:bun /opt/dashy/.output ./
+
+# Relative sources are packaged under /app/data. Point DASHY_DATA_DIR at a mount
+# for external data, e.g. -e DASHY_DATA_DIR=/data -v /srv/lake:/data:ro.
+# DuckDB spills to the OS temporary directory, which must stay writable.
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOST=0.0.0.0
+USER bun
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
+  CMD bun -e "fetch('http://127.0.0.1:3000/healthz').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+CMD ["bun", "dashy.mjs", "start"]

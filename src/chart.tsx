@@ -1,11 +1,15 @@
 import { createEffect, createSignal, onSettled, Show } from "solid-js";
-import type { DatasetDefinition, QueryResult } from "../core/types";
+import type { DatasetDefinition, QueryResult, Row } from "../core/types";
+import type { Selection } from "./chart-options";
 import { Spinner } from "./spinner";
 
 export function Chart(props: {
   definition: DatasetDefinition;
   result: QueryResult;
   locale: string;
+  selected?: Selection;
+  /** Called with the clicked row and pointer event; omitted charts are not interactive. */
+  onSelect?: (row: Row, event: MouseEvent | undefined) => void;
 }) {
   let element!: HTMLDivElement;
   const [renderer, setRenderer] =
@@ -20,7 +24,7 @@ export function Chart(props: {
     import("./charts")
       .then(({ createChart }) => {
         if (disposed) return;
-        chart = createChart(element);
+        chart = createChart(element, (row, event) => props.onSelect?.(row, event));
         setRenderer(chart);
       })
       .catch(() => {
@@ -39,27 +43,25 @@ export function Chart(props: {
       definition: props.definition,
       result: props.result,
       locale: props.locale,
+      selected: props.selected,
     }),
-    ({ chart, definition, result, locale }) => {
+    ({ chart, definition, result, locale, selected }) => {
       if (!chart) return;
-      try {
-        chart.update(definition, result, locale);
-        setError("");
-      } catch {
-        unavailable();
-      }
+      chart.update(definition, result, locale, selected)
+        .then(() => setError(""))
+        .catch(() => unavailable());
     },
   );
   return (
     <div
-      class="chart-frame"
+      class={`chart-frame${props.onSelect ? " is-interactive" : ""}`}
       aria-busy={!renderer() && !error() ? "true" : "false"}
     >
       <div
         class="chart"
         ref={element}
         role="img"
-        aria-label={`${props.definition.label}. Use Table for the underlying values.`}
+        aria-label={`${props.definition.label}. Use Table for the underlying values${props.onSelect ? " and actions" : ""}.`}
       />
       <Show when={!renderer() && !error()}>
         <div class="chart-loading" role="status">

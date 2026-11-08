@@ -6,6 +6,7 @@ import { findConfig, listSamples, loadImplementation } from "../core/runtime";
 import { resolveLocations } from "../core/locations";
 import { assertCompiledPages } from "../core/pages";
 import { themeNames } from "../core/theme";
+import { isGlob, resolveSourcePath, sourceHasFiles } from "../core/sources";
 
 const help = `Usage: dashy <start|dev|build|samples> [--with-sample <name>] [--theme <name>] [--locale <tag>] [--port <number>]
 
@@ -84,16 +85,17 @@ async function main() {
   });
   const { config } = locations;
   const project = await loadImplementation(locations);
-  for (const source of Object.values(project.sources)) {
-    if (
-      ["csv", "json", "excel", "sqlite", "duckdb", "parquet"].includes(
-        source.type,
-      ) &&
-      source.path &&
-      !existsSync(resolve(project.dataDir!, source.path))
-    )
+  for (const [name, source] of Object.entries(project.sources)) {
+    if (!["csv", "json", "excel", "sqlite", "duckdb", "parquet"].includes(source.type) || !source.path)
+      continue;
+    const path = resolveSourcePath(project.dataDir!, source.path);
+    if (isGlob(source.path)) {
+      // An empty partition tree is a data state, not a configuration error.
+      if (!(await sourceHasFiles(path)))
+        console.warn(`[dashy] Source ${name} has no files matching ${path}; its queries answer 503 until data arrives.`);
+    } else if (!existsSync(path))
       throw new Error(
-        `Missing source file: ${resolve(project.dataDir!, source.path)}. Check the selected project or sample configuration.`,
+        `Missing source file: ${path}. Check the selected project or sample configuration.`,
       );
   }
   const env = {

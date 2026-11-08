@@ -5,7 +5,7 @@ import type { DashboardShell } from "../core/types";
 const shell: DashboardShell = {
   id: "overview",
   definition: { label: "Overview", blocks: [] },
-  params: {}, labels: {},
+  params: {}, labels: {}, missing: [], crossFilters: [],
   requests: [
     { id: "shared", blockIds: ["metric", "chart", "table"] },
     { id: "other", blockIds: ["other"] },

@@ -1,4 +1,26 @@
-# Migration from the Vetify application
+# Migration notes
+
+## 0.2 to 0.3
+
+Breaking changes:
+
+1. **Dashboard filters are strict.** Every block's query must accept every dashboard parameter. Before, a block whose query did not accept a filter silently ignored it. Startup now fails with the block, query and parameter. Either add the parameter to the query or declare the exception: `unfiltered: { blockId: ["param"] }`.
+2. **Authentication hook.** `authenticate(request)` may now also return `{ principal, headers }` or `{ redirect, headers? }`. Returning a principal still works. Page requests without a principal now receive an HTML error page instead of JSON; data requests are unchanged (JSON, now with `WWW-Authenticate` on 401). Use `dashy/auth` for sessions, OpenID Connect and API keys ([authentication](auth.md)).
+3. **Reserved query keys.** `api_key`, `refresh`, `_from` and `_xf` are handled by the engine and cannot be parameter names.
+4. **One DuckDB instance per process.** Requests lease connections from a pool with process-wide `limits` (default 1 GB, 2 threads, 4 concurrent sessions). Configuration is locked, so adapters cannot run `SET`. Adapters that ATTACH databases should use `scope.id` in the alias and `scope.onRelease` to detach.
+5. **Static array options are enforced.** An `array` parameter with static `options` now rejects values outside them, like `select`.
+6. **Catalog additions.** `/api/catalog` adds `timezone` and `datasets` (labels, accepted parameters and columns); `DashboardShell` adds `missing` and `crossFilters`.
+
+Additions that need no changes:
+
+- **Charts:** `line` and `bar` keep working; `area`, `cartesian` (stacks, dual axes, scatter, horizontal) and ten more types are available.
+- **Parameters:** relative defaults, a project `timezone`, options from queries (`/api/params/:name/options`), `strict` validation, multiselect and autocomplete controls.
+- **Interaction:** column `param` annotations, cross-filters, `drillthrough`, `drillthroughTargets` and `required`.
+- **Sources:** Parquet globs relative to `dataDir`, `hive.types`, `unionByName`, and 503 for a glob without files.
+- **Performance:** an opt-in result cache (`cache`, per-query `cache`, `?refresh=true`).
+- **Deployment:** `/healthz`, `GET /api/dashboard-shell/:name`, container recipes and `check:container`.
+
+## From the Vetify application (0.1)
 
 This release replaces the Nuxt/Vue application with a generic Nitro 3 + Vite + Bun + Solid 2 application. It removes the Vetify pages, live Vendus integration, domain-specific queries and roles, credit recommendations, data-quality pages and SQL console.
 

@@ -13,9 +13,11 @@ Este guia destina-se a agentes e programadores que implementam uma solução com
 - [Temas](docs/themes.md): nomes, cantos e valores por omissão.
 - [Samples](samples/README.md): seleção, criação e distribuição de implementações de exemplo.
 - [Implementação externa](examples/external-application/): dashboard e página Customer 360 com configuração, artefactos e dados separados.
-- [API pública](core/index.ts) e [API de páginas](src/extension-api.ts): imports `dashy`, `dashy/types` e `dashy/ui`.
+- [API pública](core/index.ts), [API de páginas](src/extension-api.ts) e [autenticação](core/auth/index.ts): imports `dashy`, `dashy/types`, `dashy/ui` e `dashy/auth`.
+- [Autenticação](docs/auth.md): sessão, OpenID Connect, API keys e hook próprio.
+- [Deployment em contentores](docs/deployment.md): imagem base, imagem do projeto, `/healthz` e dados montados.
 - [Source Examples](samples/source-examples/dashy.config.ts): projeto completo com dados sintéticos nos seis formatos suportados.
-- [Maven Analytics](samples/maven-analytics/dashy.config.ts): projeto completo com dados de retalho, cinco dashboards, duas páginas customizadas e filtros variados.
+- [Maven Analytics](samples/maven-analytics/dashy.config.ts): projeto completo com dados de retalho, sete dashboards, duas páginas customizadas, opções vindas de queries (multiselect e autocomplete), cross-filter, drillthrough para o detalhe do produto e uma galeria com todos os tipos de gráfico.
 - [Queries Maven](samples/maven-analytics/queries.ts): SQL separado da configuração de apresentação.
 - [Validação do projeto](core/project.ts): referências, nomes e layouts verificados no arranque.
 - [Helpers SQL](core/sql.ts): construção de predicados com valores ligados separadamente.
@@ -27,11 +29,11 @@ Este guia destina-se a agentes e programadores que implementam uma solução com
 | Artefacto | Responsabilidade | Referências |
 | --- | --- | --- |
 | Source | Localização e formato dos dados, montados como tabela ou view | Ficheiro ou adapter |
-| Parameter | Tipo, validação, opções e valor por omissão de um filtro | Nome global em `params` |
+| Parameter | Tipo, validação, opções (estáticas ou de uma query) e valor por omissão, fixo ou relativo | Nome global em `params` |
 | Query | SQL, fontes utilizadas, parâmetros aceites e limite de resultados | Sources e params |
 | Metric | Um valor escalar de uma coluna de uma query | Query |
-| Dataset | Colunas a apresentar, formatos e gráfico opcional | Query |
-| Dashboard | Filtros, blocos, disposição, ícone e grupo de navegação | Metrics, datasets e params |
+| Dataset | Colunas a apresentar, formatos, anotações `param` e gráfico opcional | Query e params |
+| Dashboard | Filtros (aplicados a todos os blocos), `unfiltered`, `required`, drillthrough, blocos, disposição, ícone e grupo | Metrics, datasets e params |
 | Page | Componente Solid personalizado, ícone, grupo e permissões | Componente em `extensions` e params |
 
 Um dataset é uma definição de apresentação sobre uma query. Os dados residem nas sources. As métricas referenciam queries diretamente, não datasets. Uma query pode juntar várias fontes e alimentar várias métricas ou datasets.
@@ -40,10 +42,10 @@ Para implementar uma solução:
 
 1. Identificar os dados, as colunas, as unidades e as regras de negócio. Definir que valores serão reconciliados para confirmar os resultados.
 2. Configurar as sources e garantir que os caminhos são acessíveis ao servidor.
-3. Registar os parâmetros e declarar quais são usados por cada dashboard e query.
+3. Registar os parâmetros e declarar quais são usados por cada dashboard e query. Cada query de um bloco aceita todos os filtros do seu dashboard; excepções vão em `unfiltered`.
 4. Implementar queries com valores ligados e verificar resultados com filtros, sem resultados e com valores nulos.
-5. Definir métricas, colunas e séries a partir dos nomes devolvidos pelas queries.
-6. Compor dashboards com IDs de bloco únicos, larguras e grupos de navegação.
+5. Definir métricas, colunas e séries a partir dos nomes devolvidos pelas queries. Anotar com `param` as colunas cujos valores pertencem a um parâmetro.
+6. Compor dashboards com IDs de bloco únicos, larguras e grupos de navegação. Declarar `drillthrough` nos dashboards de detalhe e `required` quando precisam de um valor.
 7. Configurar identidade da aplicação, tema, locale e, quando necessário, autenticação e roles.
 8. Validar no motor, na API e no browser; depois construir e verificar o pacote de produção.
 
@@ -216,9 +218,15 @@ Abrir `/dashboards/overview`. Sem região selecionada, a receita é 6000 e exist
 
 Os tipos de parâmetro são `string`, `number`, `boolean`, `date`, `select`, `array` e `range`. Usar `required`, `default` e `description` quando aplicável. Números aceitam `integer`, `min` e `max`; selects declaram `options`; arrays e ranges usam `valueType` (`string`, `number` ou `date`). Arrays aceitam até 250 valores. Datas usam `YYYY-MM-DD`; ranges precisam dos dois extremos.
 
-O registo global define o parâmetro. `dashboard.params` escolhe os filtros visíveis. `query.params` permite esses inputs no SQL. Declarar o filtro nos dois sítios quando deve afetar o dashboard. A correspondência entre parâmetro e coluna é implementada no builder, não inferida pelo motor.
+O registo global define o parâmetro. `dashboard.params` escolhe os filtros do dashboard. `query.params` permite esses inputs no SQL. A query de cada bloco tem de aceitar todos os filtros do dashboard: o arranque falha, indicando bloco, query e parâmetro, em vez de ignorar o filtro em silêncio. Um bloco que deve ignorar um filtro de propósito declara-se no dashboard: `unfiltered: { catalogo: ["period"] }`. A correspondência entre parâmetro e coluna é implementada no builder, não inferida pelo motor.
 
 A prioridade é valor enviado, `dashboard.defaults`, `parameter.default`. Um valor vazio limpa um filtro opcional, em vez de reaplicar o default. Valores obrigatórios vazios são rejeitados. Os defaults passam pela mesma validação.
+
+Defaults relativos são avaliados em cada pedido, no `timezone` do projeto (por omissão `UTC`): `{ relative: "ytd" }`, `"mtd"`, `"last-closed-month"`, `"last-closed-year"`, `{ relative: "last-days", days: 30 }`, `{ relative: "next-days", days: 90 }`, `{ relative: "last-months", months: 12 }` ou `{ from, until }` com âncoras como `{ relative: "start-of-month", months: -2 }`. Uma data isolada aceita `as: "month"` (`YYYY-MM`, para strings) e `as: "year"` ou `"month-number"` (para números). Nunca calcular datas relativas uma única vez no carregamento da configuração.
+
+Opções podem vir de uma query: `options: { query: "client_options", value: "id", label: "name", search: true }`. A query de opções pode aceitar outros parâmetros (por exemplo marcas filtradas pela categoria), mas não o próprio. `search: true` mostra um autocomplete com pesquisa no servidor; sem `search`, arrays mostram um multiselect. Os valores são validados pelo tipo e ligados ao SQL; `strict: true` confirma que existem nas opções antes de qualquer query de dados. Endpoint: `GET /api/params/:nome/options?_q=&_value=&_limit=`.
+
+`api_key`, `refresh`, `_from` e `_xf` são chaves reservadas do motor e não podem ser nomes de parâmetros.
 
 Exemplos HTTP:
 
@@ -238,7 +246,7 @@ Os argumentos de coluna dos helpers são expressões SQL de confiança. Nunca pa
 
 Fontes nativas: `csv`, `json`, `parquet`, `duckdb`, `sqlite` e `excel` para `.xlsx`. CSV requer cabeçalhos e pode indicar `delimiter`; SQLite/DuckDB requerem `table`; DuckDB aceita `schema`; Excel aceita `sheet` e `headerRow`.
 
-Usar caminhos concretos relativos a `dataDir` com o CLI atual, que verifica a existência de cada caminho no arranque. DuckDB suporta padrões de ficheiros em alguns readers, mas um glob em `source.path` não passa nessa verificação do CLI.
+Caminhos concretos são relativos a `dataDir` e verificados no arranque. CSV, JSON e Parquet aceitam globs relativos a `dataDir`, por exemplo `gold/fact_sales/**/*.parquet`; globs absolutos ou com `..` são rejeitados. Parquet tem partições hive ligadas por omissão: `hive: { types: { year: "INTEGER", month: "VARCHAR" } }` fixa os tipos das partições, `unionByName: true` junta ficheiros com esquemas diferentes e `hive: false` desliga as partições. Um glob sem ficheiros não impede o arranque (aviso no log); as queries dessa fonte respondem 503 "Data unavailable" até haver dados.
 
 CSV, JSON e Parquet usam os readers nativos do DuckDB. SQLite e Excel importam linhas para a sessão, com `columns` opcional para declarar `VARCHAR`, `DOUBLE`, `BIGINT`, `BOOLEAN`, `DATE` ou `TIMESTAMP`. Esse mapa de tipos aplica-se aos imports SQLite/Excel e a `mountRows`; os readers nativos fazem a sua própria inferência.
 
@@ -249,20 +257,26 @@ Limites atuais:
 - Queries devolvem até 10.000 linhas por omissão; `maxRows` permite até 100.000. A resposta indica `truncated`.
 - SQLite/Excel importam no máximo 100.000 linhas. Excel aceita ficheiros até 100 MB comprimidos; isso não limita a memória descomprimida.
 - Fórmulas Excel precisam de resultados guardados no workbook. Dashy não recalcula fórmulas. Cabeçalhos devem ser únicos e não vazios.
-- Cada sessão DuckDB tem dois threads e um limite configurado de 512 MB. Esse limite é por pedido, não por servidor.
-- O prazo de uma query é 30 segundos, incluindo a montagem de fontes. Cancelamentos interrompem DuckDB e impedem leituras seguintes. Um parse Excel ou adapter que ignore o sinal só pode ser interrompido nos pontos de verificação disponíveis.
+- Todo o processo partilha uma instância DuckDB com `limits` globais: `memory` (1GB), `threads` (2), `maxConcurrentQueries` (4), `maxQueuedQueries` (32), `queueTimeoutMs` (15 s) e `queryTimeoutMs` (30 s). Excedentes esperam e depois recebem 503 com `Retry-After`. A configuração fica bloqueada: builders e adapters não podem usar `SET`.
+- O prazo de uma query inclui a montagem de fontes e a espera por uma ligação. Cancelamentos interrompem DuckDB e impedem leituras seguintes. Um parse Excel ou adapter que ignore o sinal só pode ser interrompido nos pontos de verificação disponíveis.
 
 ## Apresentação, navegação e temas
 
 Uma métrica exige uma query com no máximo uma linha e a coluna indicada. Uma coluna inexistente, múltiplas linhas ou um resultado truncado são erros. Sem linhas ou com SQL NULL, apresenta `—`; usar `COALESCE` quando a regra de negócio exige zero.
 
-Um dataset declara as colunas visíveis. Essa seleção controla a apresentação; a API pode devolver todas as colunas da query. Selecionar no SQL apenas os dados que podem ser expostos. `chart` é opcional; sem ele, apresenta uma tabela. Os gráficos suportam `line` e `bar`, com várias séries, e permitem alternar para tabela. A tabela pagina oito linhas de cada vez no browser; isso não altera o limite de linhas devolvido pela query.
+Um dataset declara as colunas visíveis. Essa seleção controla a apresentação; a API pode devolver todas as colunas da query. Selecionar no SQL apenas os dados que podem ser expostos. `chart` é opcional; sem ele, apresenta uma tabela. Tipos: `cartesian` (séries com `as` `line`/`bar`/`area`/`scatter`, `axis` `left`/`right`, `stack`, `orientation: "horizontal"`, `xType`), os atalhos `line`, `bar` e `area`, e ainda `pie` (com `donut`), `funnel`, `treemap`/`sunburst` (`path`), `heatmap` (`x`, `y`, `value`), `gauge` (`min`, `max`, `bands`), `radar`, `sankey` (`source`, `target`) e `boxplot` (valores brutos). Todos permitem alternar para tabela e são validados no arranque. Ver [tipos de gráfico](docs/contracts.md#chart-types).
+
+Uma coluna pode declarar a que parâmetro pertencem os seus valores: `{ key: "category", label: "Categoria", param: "category" }` ou `{ key: "client_name", label: "Cliente", param: { name: "client", from: "client_id" } }`. É informação sobre os dados, nunca um destino. Com isso:
+
+- **Cross-filter:** se o parâmetro for filtro do dashboard, clicar no valor define esse filtro (barra de filtros e URL actualizados, `_xf=<bloco>:<param>`). O bloco clicado mantém todos os valores e destaca a seleção; clicar de novo limpa.
+- **Drillthrough:** um dashboard declara `drillthrough: { param: "client", keepFilters: true }` e, normalmente, `required: ["client"]`. Qualquer valor desse parâmetro noutro dashboard abre-o, levando os filtros que o destino aceita e `_from` para o link de regresso. Vários destinos aparecem num menu; destinos sem permissão nunca aparecem. `drillthroughTargets: { sku: "stock-explorer", client: false }` muda os destinos num dashboard, sem tocar nos datasets.
+- Com uma só acção, o clique executa-a; com várias, abre um menu junto ao valor (rato, toque e teclado). A tabela pagina oito linhas de cada vez no browser; isso não altera o limite de linhas devolvido pela query.
 
 Os formatos são `number`, `currency`, `percent`, `text` e `date`, com `decimals` opcional. Configurar o formato da coluna para tabelas e o da série para os valores do tooltip. Percentagens usam frações: `0.25` corresponde a 25%. `currency` define explicitamente a moeda, por exemplo `AOA`, `EUR` ou `USD`; se o estilo for `currency` e a moeda estiver omitida, usa USD. `locale` controla a apresentação, não converte moedas nem traduz os textos da interface. A formatação de datas usa UTC.
 
 Os dashboards têm uma grelha de 12 colunas, com `width` entre 1 e 12, e adaptação a ecrãs pequenos. Cada bloco tem um `id` único no dashboard. Um bloco dataset pode definir `view: "table"`. A rota deriva do nome do registo: `/dashboards/<nome>`; `/` abre o primeiro dashboard autorizado, ou a primeira página autorizada quando não existem dashboards visíveis.
 
-`group` agrupa dashboards na navegação pela ordem de declaração. Por omissão, o grupo é `Dashboards` e o ícone é `layout-dashboard`. Os ícones são nomes kebab-case da seleção Lucide suportada em [core/icons.ts](core/icons.ts), como `chart-line`, `users`, `store` e `database`. Um ícone `chart-pie` na navegação não acrescenta suporte a gráficos circulares.
+`group` agrupa dashboards na navegação pela ordem de declaração. Por omissão, o grupo é `Dashboards` e o ícone é `layout-dashboard`. Os ícones são nomes kebab-case da seleção Lucide suportada em [core/icons.ts](core/icons.ts), como `chart-line`, `users`, `store` e `database`. O ícone de navegação é independente dos tipos de gráfico.
 
 Os temas disponíveis são `excel`, `chromeos`, `chatgpt`, `claude-code` e `macos`. O default é Excel. `theme.corners` aceita um estilo comum ou `{ inputs, buttons, panels }`. Os estilos válidos são `none`, `rounded`, `rounded-sm`, `rounded-md` e `rounded-lg`; `rounded` dá formato de pill aos botões. A grafia suportada é `rounded`.
 
@@ -279,21 +293,38 @@ Endpoints GET:
 ```text
 /api/catalog
 /api/dashboards/:name
+/api/dashboard-shell/:name
 /api/dashboard-data/:dashboard/:request
 /api/queries/:name
 /api/metrics/:name
 /api/datasets/:name
+/api/params/:name/options
+/healthz
 ```
 
-O catálogo contém metadados de apresentação. Queries e datasets devolvem `{ columns, rows, truncated, durationMs }`; métricas devolvem `{ value }`; o endpoint agregado de dashboard inclui definição, parâmetros, blocos e `generatedAt`. O endpoint independente devolve `{ blocks, generatedAt }`. Os IDs `:request` vêm do plano `dashboard.requests` incluído no HTML, não são nomes arbitrários de datasets.
+O catálogo contém metadados de apresentação, o `timezone` e os datasets legíveis com os parâmetros aceites e as anotações `param` das colunas, para que agentes encadeiem datasets. Queries e datasets devolvem `{ columns, rows, truncated, durationMs }`; métricas devolvem `{ value }`; o endpoint agregado de dashboard inclui definição, parâmetros, blocos e `generatedAt`. O endpoint independente devolve `{ blocks, generatedAt }`. Os IDs `:request` vêm do plano `dashboard.requests` incluído no HTML, não são nomes arbitrários de datasets.
 
-O endpoint agregado executa as queries sequencialmente numa sessão e reutiliza fontes montadas. Os pedidos independentes do browser não partilham conexões nem resultados entre si ou entre utilizadores. Não existe cache persistente dos resultados; Refresh volta a ler as fontes. As respostas usam `Cache-Control: no-store`.
+O endpoint agregado executa as queries sequencialmente numa sessão e reutiliza fontes montadas. Os pedidos independentes do browser não partilham conexões. A cache de resultados é opcional: `cache: { ttlSeconds: 600, maxBytes: "64MB" }` no projeto e `cache: false | { ttlSeconds }` por query. As permissões são verificadas antes de cada leitura da cache; pedidos idênticos simultâneos partilham uma execução; erros não ficam em cache; Refresh envia `refresh=true` e volta a ler as fontes. As respostas HTTP usam `Cache-Control: no-store`.
 
 Alguns números DuckDB são strings na API para preservar a representação exata. Confirmar a precisão exigida ao consumidor; gráficos e formatação numérica na UI convertem valores para números JavaScript.
 
 ## Autenticação e permissões
 
-Os samples são públicos. Para uma solução privada, definir `authenticate(request)` no projeto e integrar a sessão ou o fornecedor de identidade da aplicação. Pode ser assíncrono; devolve `{ roles: [...] }` para um utilizador autenticado ou `null` para negar acesso. O hook protege páginas, catálogo, endpoints de dados e rotas API customizadas.
+Os samples são públicos. Para uma solução privada, definir `authenticate(request)` no projeto. Pode ser assíncrono e devolve:
+
+- `{ roles: [...] }`, ou `{ principal, headers }` para acrescentar cabeçalhos (por exemplo um cookie renovado);
+- `{ redirect }` para enviar páginas sem sessão para o login (pedidos de dados recebem 401);
+- `null` para negar.
+
+O hook protege páginas, catálogo, endpoints de dados e rotas API customizadas. `authRoutes(request)` trata `/auth/*` antes da autenticação.
+
+O módulo opcional `dashy/auth` fornece ambos: `...createAuth({ session: { secret }, baseUrl, oidc: { issuer, clientId, clientSecret, redirectPath }, apiKeys: { file }, roles: (identity) => [...] })`.
+
+- **Sessão:** cookie JWT HttpOnly.
+- **OIDC:** authorization code com PKCE; aceita `id_token`, userinfo ou access token JWT do OpenAuth.
+- **API keys:** `X-API-Key`, `Authorization: Bearer` ou `?api_key=`. Nas páginas, a chave da query é trocada por sessão e removida do URL.
+
+As roles do utilizador vêm de uma função do projeto, por exemplo por email. Ver [autenticação](docs/auth.md).
 
 Queries, métricas, datasets, dashboards, páginas e rotas API customizadas aceitam `roles`. Uma lista não vazia exige pelo menos uma role correspondente. O acesso tem de ser permitido em cada nível utilizado. Sem roles, esse artefacto não acrescenta uma restrição. Proteger a query quando os próprios dados são privados: restringir apenas um dashboard não restringe o endpoint direto da query. Grupos de navegação não concedem permissões. As roles restringem artefactos, sem implementar isolamento automático por linha ou tenant.
 
@@ -308,7 +339,10 @@ bun test
 bun run typecheck
 bun run build
 bun run check:build
+bun run check:container   # imagem base Bun 1.4 + imagem do projeto (podman ou docker)
 ```
+
+Para contentores, usar `Containerfile` (imagem base `dashy-base` com o motor) e o template `examples/external-application/Containerfile` (imagem do projeto). O runtime corre como utilizador `bun`, expõe `/healthz`, e os dados externos montam-se só para leitura com `DASHY_DATA_DIR`. Ver [deployment em contentores](docs/deployment.md).
 
 Os testes existentes validam o motor e os samples; acrescentar verificações dos resultados e regras específicas da nova solução. `check:build` executa o pacote fora da árvore de código e verifica os cenários incluídos; não substitui a validação dos dados da implementação. Para investigar desempenho, usar `bun scripts/benchmark.ts` e os critérios em `docs/performance.md`.
 
@@ -414,7 +448,7 @@ As props públicas `PageProps`, importadas de `dashy/ui`, contêm:
 
 Dashy fornece título, descrição, branding, sidebar e layout responsivo. A página implementa o seu conteúdo e formulários. Um formulário GET para a rota atual volta a validar os parâmetros no servidor. A prioridade dos valores é pedido, `page.defaults`, `parameter.default`; parâmetros desconhecidos são rejeitados.
 
-`dashy/ui` exporta `fetchDataset(name, params, signal?)`, `fetchMetric(name, params, signal?)`, `paramsSearch(params)`, `formatValue` e `Spinner`. Os pedidos usam a sessão da mesma origem. `fetchDataset` devolve `QueryResult`; `fetchMetric` devolve `{ value }`. Erros HTTP rejeitam a Promise. Enviar apenas os parâmetros aceites pela query subjacente. Arrays usam chaves repetidas; ranges usam `.from` e `.until`. Passar `null` ou uma lista vazia para limpar explicitamente um filtro opcional.
+`dashy/ui` exporta `fetchDataset(name, params, signal?)`, `fetchMetric(name, params, signal?)`, `fetchParamOptions(name, { search?, values?, context? }, signal?)`, `paramsSearch(params)`, `formatValue` e `Spinner`. Os pedidos usam a sessão da mesma origem. `fetchDataset` devolve `QueryResult`; `fetchMetric` devolve `{ value }`. Erros HTTP rejeitam a Promise. Enviar apenas os parâmetros aceites pela query subjacente. Arrays usam chaves repetidas; ranges usam `.from` e `.until`. Passar `null` ou uma lista vazia para limpar explicitamente um filtro opcional.
 
 Iniciar pedidos no browser com `onSettled`, mostrar o estado de carregamento e erro, e cancelar com `AbortController` no cleanup ou antes de substituir um pedido. O [componente Customer 360](examples/external-application/extensions/pages/customer.tsx) mostra esse ciclo completo, incluindo repetição e resultado vazio. A página é renderizada no servidor antes de o browser carregar os seus dados. Os helpers de páginas não fazem deduplicação automática; partilhar o resultado no componente quando vários elementos usam o mesmo pedido. A deduplicação dos dashboards mantém-se.
 

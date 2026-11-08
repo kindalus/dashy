@@ -90,6 +90,7 @@ test("independent data requests execute only their shared query, preserving dash
     { id: "repeat", type: "dataset", dataset: "rows" },
     { id: "other", type: "metric", metric: "other" },
   ];
+  project.dashboards.overview!.unfiltered = { other: ["minimum"] };
   const engine = new DashyEngine(project);
   expect(engine.dashboardShell("overview").requests).toEqual([
     { id: "total", blockIds: ["total", "rows", "repeat"] },

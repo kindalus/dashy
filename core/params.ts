@@ -1,4 +1,12 @@
-import type { ParamDefinition, Params, ParamValue, Scalar } from "./types";
+import type { ParamDefault, ParamDefinition, Params, ParamValue, Scalar } from "./types.ts";
+import { resolveDefault } from "./dates.ts";
+
+/** Query keys handled by the engine itself, never validated as project parameters. */
+export const reservedParams = ["api_key", "refresh", "_from", "_xf"] as const;
+const reserved = new Set<string>(reservedParams);
+export const isReservedParam = (name: string) => reserved.has(name);
+export const hasQueryOptions = (def: ParamDefinition) =>
+  Boolean(def.options) && !Array.isArray(def.options);
 
 // Symbol.for survives independently bundled runtime configurations and the server.
 const errorBrand = Symbol.for("dashy.error");
@@ -7,6 +15,8 @@ export class DashyError extends Error {
   constructor(
     message: string,
     public status = 400,
+    /** Seconds clients should wait before retrying (503). */
+    public retryAfter?: number,
   ) {
     super(message);
     this.name = "DashyError";
@@ -64,7 +74,8 @@ export function parseParams(
   definitions: Record<string, ParamDefinition>,
   accepted: readonly string[],
   raw: Record<string, unknown>,
-  defaults: Params = {},
+  defaults: Record<string, ParamDefault> = {},
+  today: Date = new Date(),
 ): Params {
   for (const name of Object.keys(raw))
     if (!accepted.includes(name))
@@ -75,9 +86,10 @@ export function parseParams(
     if (!def) throw new Error(`Undefined parameter: ${name}`);
     const value = Object.hasOwn(raw, name)
       ? raw[name]
-      : Object.hasOwn(defaults, name)
-        ? defaults[name]
-        : def.default;
+      : resolveDefault(
+          Object.hasOwn(defaults, name) ? defaults[name] : def.default,
+          today,
+        );
     if (empty(value)) {
       if (def.required) throw new DashyError(`${def.label} is required`);
       continue;
@@ -112,6 +124,9 @@ export function parseParams(
       parsed = value.map((v) =>
         scalar(name, v, def.valueType || "string", def),
       );
+      const options = def.options;
+      if (Array.isArray(options) && parsed.some((v) => !options.some((option) => option.value === v)))
+        throw new DashyError(`Invalid option for ${name}`);
     } else {
       parsed = scalar(
         name,
@@ -121,7 +136,8 @@ export function parseParams(
       );
       if (
         def.type === "select" &&
-        !def.options?.some((option) => option.value === parsed)
+        Array.isArray(def.options) &&
+        !def.options.some((option) => option.value === parsed)
       )
         throw new DashyError(`Invalid option for ${name}`);
     }
@@ -140,6 +156,7 @@ export function readParams(
 ): Record<string, unknown> {
   const raw: Record<string, unknown> = Object.create(null);
   for (const key of new Set(search.keys())) {
+    if (reserved.has(key)) continue;
     const values = search.getAll(key);
     const parts = key.split(".");
     if (parts.length === 2 && ["from", "until"].includes(parts[1]!)) {

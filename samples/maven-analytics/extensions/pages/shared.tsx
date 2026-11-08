@@ -60,7 +60,7 @@ export function PageFilters(props: PageProps) {
       return <div class="filter-field"><label for={`maven-${name}`}>{definition.label}</label>
         <select id={`maven-${name}`} name={name} value={String(props.params[name] ?? "")}>
           <option value="">All</option>
-          <For each={definition.options ?? []}>{option => <option value={String(option.value)}>{option.label}</option>}</For>
+          <For each={Array.isArray(definition.options) ? definition.options : []}>{option => <option value={String(option.value)}>{option.label}</option>}</For>
         </select>
       </div>;
     }}</For>

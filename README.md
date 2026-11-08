@@ -45,6 +45,7 @@ bun test
 bun run typecheck
 bun run build
 bun run check:build
+bun run check:container                        # podman ou docker
 bun run start                                  # your project, empty by default
 bun run dashy build --with-sample maven-analytics
 bun scripts/check-build.ts --maven
@@ -136,18 +137,20 @@ label. See [branding, icon names and navigation groups](docs/contracts.md#brandi
 
 | Definition | Responsibility                                                   |
 | ---------- | ---------------------------------------------------------------- |
-| Source     | Where a table comes from and which adapter reads it              |
-| Parameter  | A typed input, its validation and filter control                 |
+| Source     | Where a table comes from and which adapter reads it (globs and hive partitions for Parquet) |
+| Parameter  | A typed input, its validation, filter control, relative default and optional options query |
 | Query      | SQL, bound values, declared sources and accepted parameters      |
-| Dataset    | A query result with column labels, formats and an optional chart |
+| Dataset    | A query result with column labels, formats, parameter annotations and an optional chart |
 | Metric     | One scalar column from a query returning at most one row         |
-| Dashboard  | A list of blocks, their layout, filters and default values       |
+| Dashboard  | Blocks, layout, filters (applied to every block), defaults, required values and drillthrough |
 
 Sources feed queries. Datasets and metrics reference those queries. Dashboards reference datasets and metrics. A dataset is a tabular result, not a persisted table. Queries can join multiple sources, including different formats.
 
 The browser receives presentation definitions and query results. It does not receive source paths, query builders or authentication configuration. Only registered queries can execute through HTTP; there is no arbitrary SQL console.
 
-See [contracts and examples](docs/contracts.md), [source adapters](docs/sources.md), and [migration notes](docs/migration.md).
+Clicking a value whose column declares a parameter cross-filters the dashboard or opens a drillthrough destination. Dashboards declare the parameter they detail, so datasets never reference pages. Thirteen chart types are available: cartesian lines, bars, areas, stacks, dual axes and scatter, plus pie, funnel, treemap, sunburst, heatmap, gauge, radar, sankey and boxplot.
+
+See [contracts and examples](docs/contracts.md), [source adapters](docs/sources.md), [authentication](docs/auth.md), [container deployment](docs/deployment.md), and [migration notes](docs/migration.md).
 
 ## Layout
 
@@ -188,7 +191,15 @@ Icons use Lucide 1.61.0 with named imports. Its license notices ship at `public/
 
 ## Access control
 
-The included samples are public. A private project provides `authenticate(request)` in its configuration. Return `{ roles: [...] }` for an authenticated request or `null` to deny access. Integrate your existing session or identity provider there. The hook protects SSR, the catalog and all API endpoints. Queries, metrics, datasets, dashboards and custom pages can each declare roles; access requires a match at every level used. No login pages or organization-specific roles are built into the engine.
+The included samples are public. A private project provides `authenticate(request)` in its configuration. Return `{ roles: [...] }` for an authenticated request, `{ redirect }` to send a page request to a login page, or `null` to deny access. The hook protects SSR, the catalog and all API endpoints. Queries, metrics, datasets, dashboards and custom pages can each declare roles; access requires a match at every level used.
+
+The optional `dashy/auth` module supplies the hook and `/auth/*` routes with signed session cookies, OpenID Connect (authorization code with PKCE) and API keys (`X-API-Key`, `Authorization: Bearer` or `?api_key=`, which becomes a session on pages). Roles come from a project function, for example by e-mail. See [authentication](docs/auth.md).
+
+## Limits, cache and containers
+
+All requests share one DuckDB instance per process with configurable memory, threads, concurrency, queue and timeouts (`limits`). Excess requests queue and then receive 503 with `Retry-After`. An opt-in result cache (`cache: { ttlSeconds }`) shares identical query executions; `?refresh=true` bypasses it. `timezone` sets "today" for relative defaults and DuckDB's `current_date`.
+
+`Containerfile` builds a Bun 1.4 base image with the engine; `examples/external-application/Containerfile` builds a project image from it. `/healthz` is a public liveness probe. `bun run check:container` verifies both. See [container deployment](docs/deployment.md).
 
 Project files and SQL builders are trusted server code. HTTP parameters are untrusted, validated and bound separately from SQL. Do not interpolate user values into SQL or let requests choose file paths. Source databases are opened read-only. See [source limits](docs/sources.md) before loading large files.
 
@@ -200,13 +211,16 @@ Custom routes under `/api/custom/` can declare additional methods:
 ```text
 /api/catalog
 /api/dashboards/:name
+/api/dashboard-shell/:name
 /api/dashboard-data/:dashboard/:request
 /api/metrics/:name
 /api/datasets/:name
 /api/queries/:name
+/api/params/:name/options      ?_q= &_value= &_limit=
+/healthz
 ```
 
-Ranges use `?period.from=2026-01-01&period.until=2026-06-30`. Arrays use repeated keys. Unknown parameters are rejected. Responses are not cached by shared HTTP caches. Within one dashboard request, a query used by several blocks runs once.
+Ranges use `?period.from=2026-01-01&period.until=2026-06-30`. Arrays use repeated keys. Unknown parameters are rejected; `api_key`, `refresh`, `_from` and `_xf` are reserved for the engine. `refresh=true` bypasses the result cache. Cross-filter origins travel as `_xf=<block>:<param>`. Responses are not cached by shared HTTP caches. Within one dashboard request, a query used by several blocks runs once.
 
 The initial page includes request IDs and their consuming block IDs. A
 `dashboard-data` request returns only that group's blocks and a timestamp; it

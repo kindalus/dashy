@@ -26,12 +26,11 @@ test("Maven sample includes all order lines without join fanout and reconciles t
 }, csvTimeout);
 
 test("every Maven dashboard executes and all filters reach its queries", async () => {
-  for (const name of Object.keys(engine.project.dashboards)) {
-    const result = await engine.dashboard(name, {
-      country: "Canada",
-      channel: "Online",
-      category: "Computers",
-    });
+  for (const [name, definition] of Object.entries(engine.project.dashboards)) {
+    const raw: Record<string, unknown> = { country: "Canada", channel: "Online" };
+    if (definition.params?.includes("category")) raw.category = "Computers";
+    if (definition.required?.includes("productName")) raw.productName = "Contoso Wireless Laser Mouse E50 Grey";
+    const result = await engine.dashboard(name, raw);
     expect(result.blocks.length).toBeGreaterThan(0);
     expect(result.blocks.filter((block) => block.type === "error")).toEqual([]);
   }

@@ -255,3 +255,29 @@ No further change is justified for the measured workloads. In particular:
 - Production concurrency limits, compression and field performance monitoring
   depend on deployment traffic and topology; this local review cannot establish
   those budgets. The per-request 512 MB DuckDB limit is not a server-wide bound.
+
+## Shared instance, limits and result cache, 2026-11-08
+
+The earlier review deliberately avoided shared pools and caches until there were freshness and isolation policies. Production deployment on a small shared host made both necessary: a dashboard opens one request per query group, and each request used to create a DuckDB instance allowed 512 MB. Ten groups from one user could reserve several gigabytes with no server-wide bound. The policies now exist and are tested.
+
+- **One instance, leased connections.** The memory and thread limits apply to the whole process. A request leases a fresh connection and closes it on release, which drops its temporary views. ATTACH aliases are unique per lease and detached on release. A slot semaphore bounds concurrent sessions; waiting requests queue and receive 503 with `Retry-After` when the queue is full or times out. Cancelled waiters leave the queue, and a freed slot goes directly to the next waiter. Configuration is locked after startup.
+- **Cache policy.**
+  - The cache is opt-in.
+  - The key is the query name, the bound statement and the row limit. Authorization runs before each lookup, and the principal is excluded because there is no row-level security; a future row-level policy must add it to the key.
+  - Freshness is a TTL with explicit `?refresh=true`.
+  - Concurrent misses share one execution. If that execution is cancelled by its own request, the others retry instead of failing.
+  - Errors are never cached.
+  - Memory is bounded by an approximate byte budget with LRU eviction.
+
+Measurements on macOS arm64, Bun 1.3.13, DuckDB node-api 2.0.0-r.1, default limits, cache disabled. The Maven overview now has seven blocks over four queries, so the dashboard timings are not comparable with the earlier six-block runs.
+
+| Case | Median |
+| --- | --- |
+| format-numbers | 3.92 ms |
+| format-dates | 3.75 ms |
+| import-rows | 15.81 ms |
+| maven-dashboard | 413.56 ms |
+| maven-concurrent (4 requests) | 449.66 ms |
+| maven-independent | 181.17 ms |
+
+Tests cover the memory/thread/timezone settings, the configuration lock, queueing, 503 and `Retry-After`, cancellation in the queue, lease isolation of temporary views, cache TTL, LRU, single-flight, refresh, query opt-out and the role check before cached reads.

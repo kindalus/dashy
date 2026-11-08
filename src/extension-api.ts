@@ -10,3 +10,4 @@ export interface PageProps {
   locale: string;
 }
 export { paramsSearch, fetchDataset, fetchMetric } from "./page-data";
+export { fetchOptions as fetchParamOptions } from "./controls";

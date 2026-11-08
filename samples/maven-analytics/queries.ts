@@ -1,6 +1,6 @@
 import type { QueryContext, QueryDefinition } from "../../core/types";
 
-export const filters = ["period", "country", "category", "channel"] as const;
+export const filters = ["period", "country", "category", "channel", "brand"] as const;
 const sourceNames = [
   "sales",
   "products",
@@ -20,6 +20,8 @@ function sales(context: QueryContext) {
     sql.eq("country", params.country as string | undefined),
     sql.eq("category", params.category as string | undefined),
     sql.eq("channel", params.channel as string | undefined),
+    sql.in("brand", (params.brand as string[] | undefined) ?? []),
+    sql.eq("product", params.productName as string | undefined),
     params.product
       ? sql.fragment("product ILIKE ?", [`%${params.product}%`])
       : sql.fragment(""),
@@ -62,9 +64,10 @@ function query(label: string, select: string, detail = false): QueryDefinition {
   return {
     label,
     sources: sourceNames,
+    // Every sales query accepts every dashboard filter, plus the product drillthrough.
     params: detail
-      ? [...filters, "product", "minQuantity", "delivered"]
-      : filters,
+      ? [...filters, "productName", "product", "minQuantity", "delivered"]
+      : [...filters, "productName"],
     maxRows: detail ? 1000 : 10000,
     build(context) {
       const base = sales(context);
@@ -86,8 +89,38 @@ export const queries = {
     "Monthly sales by channel",
     `SELECT strftime(order_date, '%Y-%m') AS month,
     SUM(CASE WHEN channel = 'Online' THEN revenue ELSE 0 END) AS online,
+    SUM(CASE WHEN channel = 'Store' THEN revenue ELSE 0 END) AS store,
+    COUNT(DISTINCT order_number) AS orders
+    FROM filtered GROUP BY 1 ORDER BY 1`,
+  ),
+  brands: query(
+    "Revenue by brand",
+    `SELECT brand, SUM(revenue) AS revenue FROM filtered GROUP BY 1 ORDER BY revenue DESC`,
+  ),
+  category_brands: query(
+    "Revenue by category and brand",
+    `SELECT category, brand, SUM(revenue) AS revenue FROM filtered GROUP BY 1, 2 ORDER BY 1, revenue DESC`,
+  ),
+  seasonality: query(
+    "Orders by weekday and month",
+    `SELECT strftime(order_date, '%m') AS month, dayname(order_date) AS weekday, isodow(order_date) AS weekday_number,
+    COUNT(DISTINCT order_number) AS orders FROM filtered GROUP BY 1, 2, 3 ORDER BY weekday_number, month`,
+  ),
+  channel_categories: query(
+    "Revenue from channel to category",
+    `SELECT channel, category, SUM(revenue) AS revenue FROM filtered GROUP BY 1, 2 ORDER BY revenue DESC`,
+  ),
+  category_channels: query(
+    "Category revenue by channel",
+    `SELECT category,
+    SUM(CASE WHEN channel = 'Online' THEN revenue ELSE 0 END) AS online,
     SUM(CASE WHEN channel = 'Store' THEN revenue ELSE 0 END) AS store
     FROM filtered GROUP BY 1 ORDER BY 1`,
+  ),
+  monthly_distribution: query(
+    "Monthly revenue per country by category",
+    `SELECT category, strftime(order_date, '%Y-%m') AS month, country, SUM(revenue) AS revenue
+    FROM filtered GROUP BY 1, 2, 3 ORDER BY 1`,
   ),
   categories: query(
     "Category performance",
@@ -121,4 +154,25 @@ export const queries = {
     FROM filtered ORDER BY order_date DESC, order_number DESC, line_item`,
     true,
   ),
+  /** Options for the brand filter; they follow the selected category. */
+  brand_options: {
+    label: "Brands",
+    sources: ["products"],
+    params: ["category"],
+    build: ({ source, params, sql }) => {
+      const where = sql.where(sql.eq("Category", params.category as string | undefined));
+      return { text: `SELECT DISTINCT Brand AS brand FROM ${source("products")} ${where.text} ORDER BY 1`, values: where.values };
+    },
+  } satisfies QueryDefinition,
+  /** Searchable product names for the product drillthrough. */
+  product_options: {
+    label: "Products",
+    sources: ["products"],
+    build: ({ source }) => ({ text: `SELECT DISTINCT "Product Name" AS product FROM ${source("products")} ORDER BY 1`, values: [] }),
+  } satisfies QueryDefinition,
+  catalogue: {
+    label: "Catalogue size",
+    sources: ["products"],
+    build: ({ source }) => ({ text: `SELECT COUNT(*) AS products FROM ${source("products")}`, values: [] }),
+  } satisfies QueryDefinition,
 };

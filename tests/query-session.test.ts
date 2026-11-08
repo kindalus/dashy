@@ -37,6 +37,7 @@ const project: ProjectDefinition = {
     overview: {
       label: "Overview",
       params: ["minimum"],
+      unfiltered: { count: ["minimum"] },
       blocks: [
         { id: "sum", type: "metric", metric: "sum" },
         { id: "count", type: "metric", metric: "count" },

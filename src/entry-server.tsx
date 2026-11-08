@@ -7,11 +7,14 @@ import { assertCompiledPages } from "../core/pages";
 import { pages } from "virtual:dashy-pages";
 import { DashyEngine } from "../core/engine";
 import {
+  AuthRedirect,
   authenticate,
   createApiHandler,
-  errorResponse,
+  errorPage,
   responseHeaders,
+  type Authentication,
 } from "../core/http";
+import { readCrossFilters } from "../core/engine";
 import { DashyError, readParams } from "../core/params";
 import clientAssets from "./entry-client?assets=client";
 import serverAssets from "./entry-server?assets=ssr";
@@ -26,16 +29,25 @@ const api = createApiHandler(engine);
 export default {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+    // Public liveness probe for containers; it reads no data and no configuration.
+    if (url.pathname === "/healthz")
+      return Response.json({ status: "ok" }, { headers: responseHeaders });
     if (url.pathname.startsWith("/api/")) return api(request);
+    if (url.pathname === "/auth" || url.pathname.startsWith("/auth/")) {
+      const response = await engine.project.authRoutes?.(request);
+      return response ?? errorPage(new DashyError("Page not found", 404));
+    }
     if (request.method !== "GET" && request.method !== "HEAD")
       return new Response("Method not allowed", {
         status: 405,
         headers: { Allow: "GET, HEAD" },
       });
+    let auth: Authentication | undefined;
     try {
       if (request.url.length > 16_384)
         throw new DashyError("Request URL is too long", 414);
-      const principal = await authenticate(engine, request);
+      auth = await authenticate(engine, request, true);
+      const principal = auth.principal;
       const catalog = engine.catalog(principal);
       const match = /^\/(dashboards|pages)\/([a-zA-Z][a-zA-Z0-9_-]*)\/?$/.exec(
         url.pathname,
@@ -47,7 +59,9 @@ export default {
       const raw = readParams(url.searchParams, engine.project.params);
       const props: AppProps = {
         catalog,
-        dashboard: id && kind === "dashboards" ? engine.dashboardShell(id, raw, principal) : null,
+        dashboard: id && kind === "dashboards"
+          ? engine.dashboardShell(id, raw, principal, { crossFilters: readCrossFilters(url.searchParams) })
+          : null,
         ...(id && kind === "pages" ? { page: engine.pageShell(id, raw, principal) } : {}),
       };
       const Page = props.page ? (await pages[props.page.id]!.load()).default : undefined;
@@ -97,18 +111,24 @@ export default {
         ),
         { nonce },
       );
-      return new Response(
-        request.method === "HEAD" ? null : `<!DOCTYPE html>${html}`,
-        {
-          headers: {
+      const headers = new Headers({
             ...responseHeaders,
             "Content-Type": "text/html; charset=utf-8",
             "Content-Security-Policy": `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'${import.meta.env.DEV ? " ws: wss:" : ""}; worker-src 'self'${import.meta.env.DEV ? " blob:" : ""}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,
-          },
-        },
+      });
+      auth.headers.forEach((value, name) => headers.append(name, value));
+      return new Response(
+        request.method === "HEAD" ? null : `<!DOCTYPE html>${html}`,
+        { headers },
       );
     } catch (error) {
-      return errorResponse(error);
+      if (error instanceof AuthRedirect) {
+        const headers = new Headers(error.headers);
+        headers.set("Location", error.location);
+        headers.set("Cache-Control", "no-store");
+        return new Response(null, { status: 302, headers });
+      }
+      return errorPage(error, auth?.headers);
     }
   },
 };

@@ -1,0 +1,9 @@
+.git
+.output
+.nitro
+node_modules
+graft
+tests
+*.log
+.env
+.env.*
