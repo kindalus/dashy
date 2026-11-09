@@ -104,13 +104,17 @@ export function buildChart(
       axisLabel: { color: theme.muted, formatter: (n: number) => formatValue(n, axisFormat(format), locale) },
       splitLine: { show: position !== "right", lineStyle: { color: theme.grid } },
     });
+    // Date drill-down levels label periods (2024, Q1 2024, Jan 2024) rather than raw dates.
+    const xFormat = definition.columns.find((column) => column.key === chart.x)?.format;
+    const periodLabel = xType === "category" && xFormat?.style === "date" && xFormat.grain
+      ? (value: string) => formatValue(value, xFormat, locale) : undefined;
     const categoryAxis = {
       type: xType,
       ...(xType === "category" ? { data: [...rows.map((row) => text(row[chart.x])), ...analytics.future] } : {}),
       boundaryGap: xType === "category" && kinds.includes("bar"),
       axisLine: { lineStyle: { color: theme.border } },
       axisTick: { show: false },
-      axisLabel: { color: theme.muted, hideOverlap: true },
+      axisLabel: { color: theme.muted, hideOverlap: true, ...(periodLabel ? { formatter: periodLabel } : {}) },
       ...(horizontal ? { inverse: true } : {}),
     };
     const point = (row: Row, key: string) => {

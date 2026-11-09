@@ -57,6 +57,8 @@ export interface ExportInput {
   filterNames: readonly string[];
   /** Filters this block does not apply: its own cross-filters and its `unfiltered` list. */
   ignored: readonly string[];
+  /** The block's drill-down path, e.g. "Category: Computers › Brand: Contoso". */
+  drilldown?: string;
   params: Record<string, ParamDefinition>;
   generatedAt: Date;
   /** The project locale, so text sorts as it does on screen. */
@@ -215,6 +217,7 @@ export async function toXlsx(input: ExportInput): Promise<Uint8Array<ArrayBuffer
     if (!param) continue;
     add([param.label, input.ignored.includes(name) ? "Not applied to this block" : filterValue(input.filters[name], param)]);
   }
+  if (input.drilldown) add(["Drill-down", input.drilldown]);
   if (definition.topN)
     add(["Rows", topN && hidden
       ? `${definition.topN.order === "bottom" ? "Bottom" : "Top"} ${topN} of ${result.rows.length}${definition.topN.other ? ", the rest as Other" : ""}`

@@ -115,3 +115,28 @@ test("Maven forecast series leaves out the incomplete last month", async () => {
   const end = (await engine.query("monthly_complete", { period: { from: "2020-01-01", until: "2020-06-30" } })).rows;
   expect(end.at(-1)!.month).toBe("2020-06");
 }, csvTimeout);
+
+test("Maven drill-downs: category to brand to product, and year to quarter inside the dashboard period", async () => {
+  const at = async (drilldowns: Record<string, string[]>, id: string) => {
+    const shell = engine.dashboardShell("gallery", {}, undefined, { drilldowns });
+    const request = shell.requests.find((group) => group.blockIds.includes(id))!;
+    const data = await engine.dashboardData("gallery", request.id, {}, undefined, undefined, { drilldowns });
+    const block = data.blocks.find((b) => b.id === id)!;
+    if (block.type !== "dataset") throw new Error(block.type === "error" ? block.message : "not a dataset");
+    return block;
+  };
+  const brands = await at({ sales_drilldown: ["Computers"] }, "sales_drilldown");
+  expect(brands.definition.columns.map((c) => c.key)).toEqual(["brand", "revenue"]);
+  const categories = (await at({}, "sales_drilldown")).result.rows;
+  const computers = categories.find((row) => row.category === "Computers")!;
+  // The brands of a category add up to that category.
+  expect(brands.result.rows.reduce((sum, row) => sum + Number(row.revenue), 0)).toBeCloseTo(Number(computers.revenue), 2);
+  const products = await at({ sales_drilldown: ["Computers", String(brands.result.rows[0]!.brand)] }, "sales_drilldown");
+  expect(products.result.rows.every((row) => row.brand === brands.result.rows[0]!.brand && row.category === "Computers")).toBe(true);
+  const years = (await at({}, "period_drilldown")).result.rows;
+  expect(years.map((row) => row.period)).toEqual(["2016-01-01", "2017-01-01", "2018-01-01", "2019-01-01", "2020-01-01", "2021-01-01"]);
+  const quarters = (await at({ period_drilldown: ["2020-01-01"] }, "period_drilldown")).result.rows;
+  expect(quarters.map((row) => row.period)).toEqual(["2020-01-01", "2020-04-01", "2020-07-01", "2020-10-01"]);
+  expect(quarters.reduce((sum, row) => sum + Number(row.revenue), 0))
+    .toBeCloseTo(Number(years.find((row) => row.period === "2020-01-01")!.revenue), 2);
+}, csvTimeout);

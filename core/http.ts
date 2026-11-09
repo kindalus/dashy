@@ -1,6 +1,7 @@
 import { createCustomApiHandler } from "./custom-api";
 import { DashyEngine, readCrossFilters } from "./engine";
 import { exportFile, readExportOptions } from "./export";
+import { describeDrilldown, readDrilldowns } from "./drilldown";
 import { DashyError, isDashyError, readParams } from "./params";
 import type { AuthResult, Principal } from "./types";
 
@@ -123,6 +124,7 @@ export function createApiHandler(engine: DashyEngine) {
       const parts = url.pathname.split("/").filter(Boolean);
       const refresh = url.searchParams.get("refresh") === "true";
       const crossFilters = readCrossFilters(url.searchParams);
+      const drilldowns = readDrilldowns(url.searchParams);
       let result: unknown;
       if (url.pathname === "/api/catalog") result = engine.catalog(principal);
       else if (parts[0] === "api" && parts[1] === "params" && parts[3] === "options" && parts.length === 4) {
@@ -153,7 +155,7 @@ export function createApiHandler(engine: DashyEngine) {
         }
         if (parts[1] === "dashboard-export" && independent) {
           let options: ReturnType<typeof readExportOptions> | undefined;
-          const block = await engine.dashboardBlock(name, group, params, principal, request.signal, { refresh, crossFilters },
+          const block = await engine.dashboardBlock(name, group, params, principal, request.signal, { refresh, crossFilters, drilldowns },
             (definition) => { options = readExportOptions(url.searchParams, definition); });
           const dashboard = block.shell.definition;
           const file = await exportFile({
@@ -164,6 +166,7 @@ export function createApiHandler(engine: DashyEngine) {
               ...block.shell.crossFilters.filter((origin) => origin.block === group).map((origin) => origin.param),
               ...(dashboard.unfiltered?.[group] ?? []),
             ],
+            drilldown: describeDrilldown(block.definition, block.shell.drilldowns[group] ?? []) || undefined,
             params: engine.project.params, generatedAt: new Date(),
             locale: engine.project.locale ?? "pt",
             options: options!,
@@ -174,11 +177,11 @@ export function createApiHandler(engine: DashyEngine) {
           return withHeaders(new Response(file.body, { headers }), auth.headers);
         }
         if (parts[1] === "dashboard-shell")
-          result = engine.dashboardShell(name, params, principal, { crossFilters });
+          result = engine.dashboardShell(name, params, principal, { crossFilters, drilldowns });
         else if (independent)
-          result = await engine.dashboardData(name, group, params, principal, request.signal, { refresh, crossFilters });
+          result = await engine.dashboardData(name, group, params, principal, request.signal, { refresh, crossFilters, drilldowns });
         else if (parts[1] === "dashboards")
-          result = await engine.dashboard(name, params, principal, request.signal, { refresh, crossFilters });
+          result = await engine.dashboard(name, params, principal, request.signal, { refresh, crossFilters, drilldowns });
         else if (parts[1] === "datasets")
           result = await engine.dataset(name, params, principal, undefined, request.signal, { refresh });
         else if (parts[1] === "metrics")

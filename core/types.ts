@@ -129,10 +129,14 @@ export interface QueryDefinition {
   cache?: false | { ttlSeconds: number };
   build(context: QueryContext): SqlStatement;
 }
+/** Period lengths for date drill-down levels and date formatting. */
+export type DateGrain = "year" | "quarter" | "month" | "day";
 export interface Format {
   style?: "number" | "currency" | "percent" | "text" | "date";
   currency?: string;
   decimals?: number;
+  /** For dates: show the period, e.g. 2024, Q1 2024, Jan 2024. */
+  grain?: DateGrain;
 }
 /** Declares that a column holds values of a project parameter. Never a navigation target. */
 export type ColumnParam = string | { name: string; from: string };
@@ -250,6 +254,32 @@ export interface DatasetDefinition {
   subtotals?: readonly string[];
   /** Lets users keep only the N highest (or lowest) rows, in the table and the chart. */
   topN?: TopNDefinition;
+  /**
+   * Levels shown inside this block, outermost first. Clicking a value of a
+   * level's `column` shows the next level for that value; a breadcrumb goes back.
+   * Drilling is local to the block and never changes the dashboard filters.
+   */
+  drilldown?: readonly DrilldownLevel[];
+}
+export interface DrilldownLevel {
+  /** Query for this level. Defaults to the dataset's query. */
+  query?: string;
+  /** Column holding the value a click drills into. */
+  column: string;
+  /** Breadcrumb and menu name, e.g. "Brand". Defaults to the column's label. */
+  label?: string;
+  /** Categorical levels: the parameter the clicked value sets for every deeper level. */
+  param?: string;
+  /** Date levels: the date range parameter narrowed to the clicked period for every deeper level. */
+  range?: string;
+  /** Period length of this level's `column` values. Required with `range`; also formats the column. */
+  grain?: DateGrain;
+  /** Fixed parameter values for this level's query, e.g. { grain: "month" }. */
+  set?: Record<string, Scalar>;
+  /** Columns at this level when they differ from the dataset's. */
+  columns?: readonly DatasetColumn[];
+  /** Chart at this level when it differs from the dataset's. */
+  chart?: ChartDefinition;
 }
 export interface MetricDefinition {
   label: string;
@@ -470,6 +500,8 @@ export interface DashboardShell {
   /** Required parameters without values; when present no requests are made. */
   missing: string[];
   crossFilters: CrossFilterOrigin[];
+  /** Drill-down path per dataset block: the values clicked, outermost first. */
+  drilldowns: Record<string, string[]>;
 }
 export interface DashboardRequest {
   id: string;

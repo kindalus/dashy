@@ -3,10 +3,12 @@ import { dashboardIconNames } from "./icons.ts";
 import { defineApiRoutes } from "./api-definition.ts";
 import { resolveTheme } from "./theme.ts";
 import { isValidTimezone, relativeDefaultError } from "./dates.ts";
-import { isReservedParam } from "./params.ts";
+import { isReservedParam, parseParams } from "./params.ts";
 import { resolveLimits, parseBytes } from "./limits.ts";
 import { validateChart } from "./charts.ts";
 import { validateTable } from "./tables.ts";
+import { drilldownError, drilldownQueries, drilldownSetParams, levelDefinition } from "./drilldown.ts";
+import type { DatasetColumn } from "./types.ts";
 
 export function defineProject<const T extends ProjectDefinition>(
   project: T,
@@ -160,14 +162,34 @@ export function defineProject<const T extends ProjectDefinition>(
     }
     const tableError = validateTable(dataset);
     assert(!tableError, `${name} ${tableError}`);
-    for (const column of dataset.columns) {
-      if (column.param === undefined) continue;
-      const target = typeof column.param === "string" ? { name: column.param, from: column.key } : column.param;
-      assert(target && typeof target.name === "string" && typeof target.from === "string" && target.from,
-        `${name} column ${column.key} param must be a parameter name or { name, from }`);
-      const def = project.params[target.name];
-      assert(def, `${name} column ${column.key} references unknown parameter ${target.name}`);
-      assert(def!.type !== "range", `${name} column ${column.key} cannot map to range parameter ${target.name}`);
+    const annotations = (columnsOf: readonly DatasetColumn[]) => {
+      for (const column of columnsOf) {
+        if (column.param === undefined) continue;
+        const target = typeof column.param === "string" ? { name: column.param, from: column.key } : column.param;
+        assert(target && typeof target.name === "string" && typeof target.from === "string" && target.from,
+          `${name} column ${column.key} param must be a parameter name or { name, from }`);
+        const def = project.params[target.name];
+        assert(def, `${name} column ${column.key} references unknown parameter ${target.name}`);
+        assert(def!.type !== "range", `${name} column ${column.key} cannot map to range parameter ${target.name}`);
+      }
+    };
+    annotations(dataset.columns);
+    if (dataset.drilldown !== undefined) {
+      const drillError = drilldownError(dataset, project, {
+        chart: (definition) => definition.chart ? validateChart(definition.chart, definition.columns.map((c) => c.key)) : undefined,
+        table: validateTable,
+      });
+      assert(!drillError, `${name} ${drillError}`);
+      for (const [index, level] of dataset.drilldown.entries()) {
+        annotations(levelDefinition(dataset, index).columns);
+        if (level.set) {
+          try {
+            parseParams(project.params, Object.keys(level.set), level.set);
+          } catch (error) {
+            assert(false, `${name} drilldown level ${index + 1} set: ${(error as Error).message}`);
+          }
+        }
+      }
     }
   }
   defineApiRoutes(project.api ?? {});
@@ -247,25 +269,32 @@ export function defineProject<const T extends ProjectDefinition>(
           ? project.metrics[block.metric]
           : project.datasets[block.dataset];
       assert(target, `${name} references an unknown ${block.type}`);
-      const query = project.queries[target!.query]!;
-      // Dashboard filters apply to every block; exceptions are declared, never silent.
-      const ignored = dashboard.unfiltered?.[block.id] ?? [];
-      for (const param of dashboard.params ?? []) {
-        const accepted = (query.params ?? []).includes(param);
-        if (ignored.includes(param))
-          assert(!accepted, `${name} block ${block.id} lists ${param} as unfiltered, but query ${target!.query} accepts it`);
-        else
-          assert(accepted, `${name} block ${block.id}: query ${target!.query} does not accept dashboard parameter ${param}. Add it to the query or declare unfiltered: { ${block.id}: ["${param}"] }`);
-      }
-      for (const param of query.params || []) {
-        if (
-          project.params[param]?.required &&
-          project.params[param]?.default === undefined
-        )
-          assert(
-            dashboard.params?.includes(param),
-            `${name} must expose required parameter ${param}`,
-          );
+      // A drill-down block runs one query per level; each must honour the dashboard's filters.
+      const drilled = block.type === "dataset" ? project.datasets[block.dataset]! : undefined;
+      const queryNames = drilled?.drilldown ? drilldownQueries(drilled) : [target!.query];
+      for (const param of drilled ? drilldownSetParams(drilled) : [])
+        assert(!dashboard.params?.includes(param), `${name} block ${block.id}: drill-down sets ${param}, so it cannot also be a dashboard parameter`);
+      for (const queryName of queryNames) {
+        const query = project.queries[queryName]!;
+        // Dashboard filters apply to every block; exceptions are declared, never silent.
+        const ignored = dashboard.unfiltered?.[block.id] ?? [];
+        for (const param of dashboard.params ?? []) {
+          const accepted = (query.params ?? []).includes(param);
+          if (ignored.includes(param))
+            assert(!accepted, `${name} block ${block.id} lists ${param} as unfiltered, but query ${queryName} accepts it`);
+          else
+            assert(accepted, `${name} block ${block.id}: query ${queryName} does not accept dashboard parameter ${param}. Add it to the query or declare unfiltered: { ${block.id}: ["${param}"] }`);
+        }
+        for (const param of query.params || []) {
+          if (
+            project.params[param]?.required &&
+            project.params[param]?.default === undefined
+          )
+            assert(
+              dashboard.params?.includes(param),
+              `${name} must expose required parameter ${param}`,
+            );
+        }
       }
     }
   }

@@ -17,7 +17,7 @@ Este guia destina-se a agentes e programadores que implementam uma solução com
 - [Autenticação](docs/auth.md): sessão, OpenID Connect, API keys e hook próprio.
 - [Deployment em contentores](docs/deployment.md): imagem base, imagem do projeto, `/healthz` e dados montados.
 - [Source Examples](samples/source-examples/dashy.config.ts): projeto completo com dados sintéticos nos seis formatos suportados.
-- [Maven Analytics](samples/maven-analytics/dashy.config.ts): projeto completo com dados de retalho, sete dashboards, duas páginas customizadas, opções vindas de queries (multiselect e autocomplete), cross-filter, drillthrough para o detalhe do produto e uma galeria com todos os tipos de gráfico.
+- [Maven Analytics](samples/maven-analytics/dashy.config.ts): projeto completo com dados de retalho, sete dashboards, duas páginas customizadas, opções vindas de queries (multiselect e autocomplete), cross-filter, drillthrough para o detalhe do produto e uma galeria com todos os tipos de gráfico e dois drill-downs (Categoria → Marca → Produto e Ano → Trimestre → Mês → Dia).
 - [Queries Maven](samples/maven-analytics/queries.ts): SQL separado da configuração de apresentação.
 - [Validação do projeto](core/project.ts): referências, nomes e layouts verificados no arranque.
 - [Helpers SQL](core/sql.ts): construção de predicados com valores ligados separadamente.
@@ -226,7 +226,7 @@ Defaults relativos são avaliados em cada pedido, no `timezone` do projeto (por 
 
 Opções podem vir de uma query: `options: { query: "client_options", value: "id", label: "name", search: true }`. A query de opções pode aceitar outros parâmetros (por exemplo marcas filtradas pela categoria), mas não o próprio. `search: true` mostra um autocomplete com pesquisa no servidor; sem `search`, arrays mostram um multiselect. Os valores são validados pelo tipo e ligados ao SQL; `strict: true` confirma que existem nas opções antes de qualquer query de dados. Endpoint: `GET /api/params/:nome/options?_q=&_value=&_limit=`.
 
-`api_key`, `refresh`, `_from`, `_xf`, `_format`, `_sort` e `_top` são chaves reservadas do motor e não podem ser nomes de parâmetros.
+`api_key`, `refresh`, `_from`, `_xf`, `_dd`, `_format`, `_sort` e `_top` são chaves reservadas do motor e não podem ser nomes de parâmetros.
 
 Exemplos HTTP:
 
@@ -273,6 +273,13 @@ Uma coluna pode declarar a que parâmetro pertencem os seus valores: `{ key: "ca
 - **Cross-filter:** se o parâmetro for filtro do dashboard, clicar no valor define esse filtro (barra de filtros e URL actualizados, `_xf=<bloco>:<param>`). O bloco clicado mantém todos os valores e destaca a seleção; clicar de novo limpa.
 - **Drillthrough:** um dashboard declara `drillthrough: { param: "client", keepFilters: true }` e, normalmente, `required: ["client"]`. Qualquer valor desse parâmetro noutro dashboard abre-o, levando os filtros que o destino aceita e `_from` para o link de regresso. Vários destinos aparecem num menu; destinos sem permissão nunca aparecem. `drillthroughTargets: { sku: "stock-explorer", client: false }` muda os destinos num dashboard, sem tocar nos datasets.
 - Com uma só acção, o clique executa-a; com várias, abre um menu junto ao valor (rato, toque e teclado). A tabela pagina oito linhas de cada vez no browser; isso não altera o limite de linhas devolvido pela query.
+
+**Drill-down** desce níveis dentro do próprio bloco (Categoria → Marca → Produto, Ano → Trimestre → Mês → Dia), sem mexer no resto do dashboard. Declara-se no dataset com `drilldown: [nível, ...]`. Cada nível tem `column` (valor clicado), e opcionalmente `query` (por omissão a do dataset), `label`, `columns`, `chart` e `set` (valores fixos de parâmetros, por exemplo `{ grain: "month" }`). A relação entre níveis é declarada: o valor clicado passa a filtro de todos os níveis abaixo.
+- Níveis categóricos usam `param`: o valor clicado define esse parâmetro (arrays recebem `[valor]`) e o `WHERE` da query seguinte define a relação.
+- Níveis de datas usam `range` (parâmetro range de datas) e `grain` (`year`, `quarter`, `month`, `day`): o valor clicado é o início do período (`date_trunc`) e o motor converte-o no intervalo, intersectado com o filtro do dashboard, que nunca é alargado. Uma única query serve todos os níveis com `date_trunc(?, coluna)` e `set: { grain }`; o grain é um valor ligado, nunca texto SQL.
+- `grain` também formata a coluna (`2024`, `T1 2024`, `jan. 2024`); qualquer coluna de data aceita `format: { style: "date", grain }`.
+- Validação no arranque: pelo menos dois níveis; todos menos o último têm `param` ou `range`, o último nenhum; cada query mais funda aceita o que os níveis acima passam; todas as queries dos níveis aceitam os filtros do dashboard; os parâmetros de `set` não podem ser filtros do dashboard.
+- O caminho vai no URL como `_dd=<bloco>:<valor>` repetido, mantém-se com cross-filter e refresh e volta ao topo quando se aplicam novos filtros. Exportações, legendas de imagens e a folha Filters do Excel incluem o caminho. Ver [drill-down](docs/contracts.md#drill-down).
 
 As tabelas ordenam por qualquer coluna (clique no cabeçalho; `defaultSort: { column, direction }` define a ordem inicial). `aggregate` numa coluna (`sum`, `count`, `min`, `max`, `avg` ou `{ ratio: [numerador, denominador] }`) alimenta `totals: true` (linha de total), `subtotals: ["coluna", ...]` (grupos com subtotal) e a linha "Other" de `topN: { by, options?, default?, order?, other?, otherLabel?, label? }`, que acrescenta um selector Top N à tabela e ao gráfico. Usar `ratio` para margens. `topN` não se combina com `subtotals`; `other` exige agregado em `by` e um gráfico pie, funnel, radar ou cartesiano de categorias (ou nenhum). Resultados truncados não têm totais, subtotais nem Top N. Ver [ordenação, totais, subtotais e Top N](docs/contracts.md#sorting-totals-subtotals-and-top-n).
 

@@ -8,6 +8,7 @@ import { todayIn } from "./dates";
 import { poolFor, type DatabasePool } from "./pool";
 import { cacheKey, QueryCache } from "./cache";
 import { numericValue } from "./tables";
+import { drillInputs, levelDefinition, validDrilldowns } from "./drilldown";
 import type {
   BlockResult,
   Catalog,
@@ -51,6 +52,8 @@ export interface ExecutionOptions {
 }
 export interface DashboardOptions extends ExecutionOptions {
   crossFilters?: readonly CrossFilterOrigin[];
+  /** Drill-down path per block, from repeated _dd=block:value keys. */
+  drilldowns?: Record<string, readonly string[]>;
 }
 export interface ParamOptionsRequest {
   /** Case-insensitive search on label and value. */
@@ -366,10 +369,10 @@ export class DashyEngine {
         throw new Error(`Dataset ${name} has no column ${column.key}`);
     return result;
   }
-  private blockQuery(block: DashboardBlock): string {
-    return block.type === "metric"
-      ? this.project.metrics[block.metric]!.query
-      : this.project.datasets[block.dataset]!.query;
+  private blockQuery(block: DashboardBlock, drilldowns: Record<string, readonly string[]> = {}): string {
+    if (block.type === "metric") return this.project.metrics[block.metric]!.query;
+    const dataset = this.project.datasets[block.dataset]!;
+    return levelDefinition(dataset, drilldowns[block.id]?.length ?? 0).query;
   }
   /** Keep only cross-filters that a click on this dashboard could have produced. */
   private validCrossFilters(
@@ -421,17 +424,21 @@ export class DashyEngine {
     );
     const missing = (definition.required ?? []).filter((param) => !Object.hasOwn(params, param));
     const crossFilters = this.validCrossFilters(definition, params, options.crossFilters ?? []);
+    const drilldowns = validDrilldowns(definition, this.project.datasets, options.drilldowns ?? {});
     const groups = new Map<string, DashboardRequest>();
     if (!missing.length)
       for (const block of definition.blocks) {
         // A cross-filter origin keeps its own selection visible, so it needs its own request.
         const excluded = crossFilters.filter((origin) => origin.block === block.id).map((origin) => origin.param);
-        const key = JSON.stringify([this.blockQuery(block), excluded]);
+        // A drilled block runs its level with its own path, so it shares only identical work.
+        const drilled = block.type === "dataset" && this.project.datasets[block.dataset]!.drilldown
+          ? [block.dataset, drilldowns[block.id] ?? []] : [];
+        const key = JSON.stringify([this.blockQuery(block, drilldowns), excluded, drilled]);
         if (!groups.has(key)) groups.set(key, { id: block.id, blockIds: [] });
         groups.get(key)!.blockIds.push(block.id);
       }
     return {
-      id: name, definition, params, labels, requests: [...groups.values()], missing, crossFilters,
+      id: name, definition, params, labels, requests: [...groups.values()], missing, crossFilters, drilldowns,
     };
   }
 
@@ -477,14 +484,14 @@ export class DashyEngine {
       throw new DashyError(`${this.project.params[shell.missing[0]!]!.label} is required`);
     const block = shell.definition.blocks.find((b) => b.id === blockId);
     if (!block || block.type !== "dataset") throw new DashyError("Dataset block not found", 404);
-    const definition = this.project.datasets[block.dataset]!;
+    const definition = levelDefinition(this.project.datasets[block.dataset]!, shell.drilldowns[blockId]?.length ?? 0);
     // Check access first, so option errors never reveal a restricted dataset's columns.
     requireRead(definition.roles, principal);
     requireRead(this.project.queries[definition.query]!.roles, principal);
     prepare?.(definition);
     const [loaded] = (await this.loadBlocks(shell, [block], principal, signal, options, true)).blocks;
     if (loaded?.type !== "dataset") throw new Error("Unable to load this block");
-    return { shell, definition, result: loaded.result };
+    return { shell, definition: loaded.definition, result: loaded.result };
   }
 
   async dashboard(
@@ -513,13 +520,13 @@ export class DashyEngine {
     /** Throw block errors (with their status) instead of returning error blocks. */
     rethrow = false,
   ): Promise<DashboardData> {
-    const { definition, params, crossFilters } = shell;
+    const { definition, params, crossFilters, drilldowns } = shell;
     const session = new QuerySession(this.project, this.adapters, signal, this.pool);
     try {
       // Request-local memoization shares queries between blocks without leaking results between users.
       const results = new Map<string, Promise<QueryResult>>();
-      const executor = (excluded: readonly string[]) => (queryName: string) => {
-        const key = JSON.stringify([queryName, excluded]);
+      const executor = (excluded: readonly string[], drill: Record<string, unknown> = {}) => (queryName: string) => {
+        const key = JSON.stringify([queryName, excluded, drill]);
         if (!results.has(key)) {
           const accepted = this.project.queries[queryName]!.params || [];
           const inputs = selectParams(params, accepted);
@@ -532,6 +539,9 @@ export class DashyEngine {
             )
               inputs[name] = null;
           }
+          // Drill-down values narrow this block only; validation guarantees the level accepts them.
+          for (const [name, value] of Object.entries(drill))
+            if (accepted.includes(name)) inputs[name] = value;
           results.set(
             key,
             this.executeQuery(session, queryName, inputs, principal, options, signal),
@@ -550,13 +560,26 @@ export class DashyEngine {
                 executor([...excluded, ...(definition.unfiltered?.[block.id] ?? [])]), signal),
               id: block.id,
             });
-          else
-            blocks.push({
-              id: block.id,
-              type: "dataset",
-              definition: this.project.datasets[block.dataset]!,
-              result: await this.dataset(block.dataset, {}, principal, execute),
-            });
+          else {
+            const dataset = this.project.datasets[block.dataset]!;
+            const path = drilldowns[block.id] ?? [];
+            if (!dataset.drilldown)
+              blocks.push({
+                id: block.id,
+                type: "dataset",
+                definition: dataset,
+                result: await this.dataset(block.dataset, {}, principal, execute),
+              });
+            else {
+              requireRead(dataset.roles, principal);
+              const level = levelDefinition(dataset, path.length);
+              const result = await executor(excluded, drillInputs(dataset, path, params, this.project.params))(level.query);
+              for (const column of level.columns)
+                if (!result.columns.includes(column.key))
+                  throw new Error(`Dataset ${block.dataset} drill-down level ${path.length + 1} has no column ${column.key}`);
+              blocks.push({ id: block.id, type: "dataset", definition: level, result });
+            }
+          }
         } catch (error) {
           if (signal?.aborted) throw new DashyError("Request cancelled", 499);
           if (rethrow) throw error;

@@ -112,6 +112,8 @@ export default defineProject({
       min: 1,
     },
     delivered: { label: "Has delivery date", type: "boolean" },
+    // Set by the period drill-down's levels; never a dashboard filter.
+    grain: { label: "Granularity", type: "select", options: choices(["year", "quarter", "month", "day"]) },
   },
   sources: {
     sales: { type: "csv", path: "Sales.csv" },
@@ -192,6 +194,39 @@ export default defineProject({
       chart: { type: "treemap", path: ["category", "brand"], value: "revenue", format: usd },
       subtotals: ["category"],
       totals: true,
+    },
+    sales_drilldown: {
+      label: "Sales drill-down",
+      description: "Revenue by category, brand and product.",
+      query: "categories",
+      columns: [category, revenue],
+      chart: { type: "bar", x: "category", series: [revenue] },
+      drilldown: [
+        { column: "category", param: "category" },
+        {
+          query: "brands", column: "brand", param: "brand",
+          columns: [brand, revenue],
+          chart: { type: "bar", x: "brand", orientation: "horizontal", series: [revenue] },
+        },
+        {
+          query: "products", column: "product",
+          columns: [{ key: "product", label: "Product", param: "productName" }, units, revenue],
+          chart: { type: "bar", x: "product", orientation: "horizontal", series: [revenue] },
+        },
+      ],
+    },
+    period_drilldown: {
+      label: "Revenue by period",
+      description: "Revenue and orders by year, quarter, month and day.",
+      query: "sales_by_period",
+      columns: [{ key: "period", label: "Period" }, revenue, { key: "orders", label: "Orders", aggregate: "sum" }],
+      chart: { type: "bar", x: "period", series: [revenue, { key: "orders", label: "Orders", as: "line", axis: "right" }] },
+      drilldown: [
+        { column: "period", label: "Year", range: "period", grain: "year", set: { grain: "year" } },
+        { column: "period", label: "Quarter", range: "period", grain: "quarter", set: { grain: "quarter" } },
+        { column: "period", label: "Month", range: "period", grain: "month", set: { grain: "month" } },
+        { column: "period", label: "Day", grain: "day", set: { grain: "day" } },
+      ],
     },
     category_brands_sunburst: {
       label: "Categories and brands (sunburst)",
@@ -407,9 +442,11 @@ export default defineProject({
       icon: "chart-pie",
       group: "Examples",
       label: "Chart gallery",
-      description: "Every chart type. Click marks to cross-filter or open product detail.",
+      description: "Every chart type. Click marks to cross-filter, drill down or open product detail.",
       params: filters,
       blocks: [
+        dataset("sales_drilldown", 6),
+        dataset("period_drilldown", 6),
         dataset("margin_gauge", 4),
         dataset("category_mix", 4),
         dataset("brands", 4),

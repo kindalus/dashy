@@ -1,4 +1,4 @@
-import type { Format, Scalar } from "../core/types";
+import type { DateGrain, Format, Scalar } from "../core/types";
 
 const numberFormats = new Map<string, Intl.NumberFormat>();
 const dateFormats = new Map<string, Intl.DateTimeFormat>();
@@ -21,6 +21,7 @@ export function formatValue(
   if (value === null || value === undefined) return "—";
   if (format.style === "text" || typeof value === "boolean")
     return String(value);
+  if (format.style === "date" && format.grain) return formatPeriod(value, format.grain, locale);
   if (format.style === "date") {
     const date = new Date(String(value));
     return Number.isFinite(date.valueOf())
@@ -65,4 +66,19 @@ export function formatValue(
         maximumFractionDigits,
       }),
   ).format(number);
+}
+
+/** A period from its start date: 2024, Q1 2024 (T1 in Portuguese), Jan 2024 or a medium date. */
+export function formatPeriod(value: Scalar, grain: DateGrain, locale = "pt"): string {
+  const match = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?/.exec(String(value));
+  if (!match) return String(value);
+  const year = Number(match[1]);
+  const month = match[2] ? Number(match[2]) : 1;
+  if (grain === "year") return match[1]!;
+  if (grain === "quarter") return `${locale.toLowerCase().startsWith("pt") ? "T" : "Q"}${Math.floor((month - 1) / 3) + 1} ${year}`;
+  const date = new Date(Date.UTC(year, month - 1, match[3] ? Number(match[3]) : 1));
+  const options: Intl.DateTimeFormatOptions = grain === "month"
+    ? { month: "short", year: "numeric", timeZone: "UTC" }
+    : { dateStyle: "medium", timeZone: "UTC" };
+  return cached(dateFormats, `${locale}:${grain}`, () => new Intl.DateTimeFormat(locale, options)).format(date);
 }

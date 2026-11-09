@@ -25,6 +25,12 @@ selected one with `sql.previousRange`, so Revenue, Gross profit and Orders show 
 change, and Revenue draws a monthly sparkline. With the default full range there
 is no earlier data, so no change is shown; pick a year to see it.
 
+Drill-down: the Chart gallery's Sales drill-down walks Category → Brand → Product
+(each level with its own query, columns and chart), and Revenue by period walks
+Year → Quarter → Month → Day with one query whose `grain` parameter each level sets.
+Click a bar or a table value; the breadcrumb above the chart goes back. Category and
+brand values also offer the cross-filter in the menu, and products open Product detail.
+
 Chart analytics: Stores shows monthly revenue with an average reference line, a
 linear trend and a six-month linear forecast. Its query leaves out an incomplete
 last month, whether the selected period or the data (which ends on 2021-02-20)

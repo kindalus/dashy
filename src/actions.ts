@@ -10,8 +10,10 @@ import type {
   Row,
   Scalar,
 } from "../core/types";
+import { levelLabel } from "../core/drilldown";
 
 export type ClickAction =
+  | { kind: "drill"; label: string; value: string; display: string }
   | { kind: "filter"; param: string; label: string; value: Scalar; display: string }
   | { kind: "clear"; param: string; label: string; display: string }
   | { kind: "open"; dashboard: string; label: string; href: string; display: string };
@@ -130,6 +132,40 @@ export function actionsFor(
     });
   return actions;
 }
+
+/** The column a block's current drill-down level drills on, when a deeper level exists. */
+export function drillColumn(definition: DatasetDefinition, depth: number): string | undefined {
+  const levels = definition.drilldown;
+  return levels && depth < levels.length - 1 ? levels[depth]!.column : undefined;
+}
+
+/** "Drill down to <next level>" for a row's value at the current depth. */
+export function drillAction(
+  definition: DatasetDefinition,
+  depth: number,
+  row: Row,
+  display: (value: Scalar) => string,
+): Extract<ClickAction, { kind: "drill" }> | undefined {
+  const column = drillColumn(definition, depth);
+  if (!column) return undefined;
+  const value = row[column];
+  if (value === null || value === undefined || value === "") return undefined;
+  return { kind: "drill", label: levelLabel(definition, depth + 1), value: String(value), display: display(value) };
+}
+
+/** Paths after drilling a block down into `value`, or back up to `depth` (0 is the top level). */
+export function drillDown(paths: Record<string, readonly string[]>, blockId: string, value: string): Record<string, string[]> {
+  return { ...clonePaths(paths), [blockId]: [...(paths[blockId] ?? []), value] };
+}
+export function drillTo(paths: Record<string, readonly string[]>, blockId: string, depth: number): Record<string, string[]> {
+  const next = clonePaths(paths);
+  const path = (paths[blockId] ?? []).slice(0, Math.max(0, depth));
+  if (path.length) next[blockId] = path;
+  else delete next[blockId];
+  return next;
+}
+const clonePaths = (paths: Record<string, readonly string[]>) =>
+  Object.fromEntries(Object.entries(paths).map(([block, path]) => [block, [...path]]));
 
 /** Annotated columns whose values a chart element identifies. */
 export function chartColumns(definition: DatasetDefinition, keys: readonly string[]): DatasetColumn[] {

@@ -33,9 +33,10 @@ import {
 } from "./dashboard-loader";
 import { ParameterControl } from "./controls";
 import {
-  actionsFor, applyAction, backLink, chartColumns, columnTarget, drillthroughTargets, selectionFor,
-  type ActionContext, type ClickAction,
+  actionsFor, applyAction, backLink, chartColumns, columnTarget, drillAction, drillColumn, drillDown, drillthroughTargets,
+  drillTo, selectionFor, type ActionContext, type ClickAction,
 } from "./actions";
+import { appendDrilldowns, describeDrilldown, levelLabel } from "../core/drilldown";
 import { chartKeyColumns } from "../core/charts";
 import { applyTopN, isOtherRow, labelColumn, shapeTable, summaryLabel, topNChoices, type TableRow } from "../core/tables";
 import { compareMetric, sparklinePaths, targetProgress } from "./metric-compare";
@@ -78,7 +79,12 @@ interface MenuState {
 /** Per-block interaction handed to datasets: resolves and runs click actions. */
 export interface BlockInteraction {
   columns: (definition: DatasetDefinition) => DatasetColumn[];
-  select: (definition: DatasetDefinition, column: DatasetColumn, row: Row, event?: MouseEvent | KeyboardEvent) => void;
+  /** A table cell (with its column) or a chart element (column undefined, or the identified one). */
+  select: (definition: DatasetDefinition, column: DatasetColumn | undefined, row: Row, event?: MouseEvent | KeyboardEvent, chart?: boolean) => void;
+  /** The block's drill-down path; empty at the top level. */
+  drillPath: () => readonly string[];
+  /** Return to a depth: 0 is the top level. */
+  drillTo: (depth: number) => void;
   selection: (definition: DatasetDefinition) => ((row: Row) => boolean) | undefined;
   /** Download URL for this block as shown: filters, cross-filters, sort and Top N choice. */
   exportHref: (format: "csv" | "xlsx", sort: TableSort | undefined, top: number | undefined) => string | undefined;
@@ -127,17 +133,25 @@ function DashboardContent(props: AppProps) {
     if (!updated) return "No blocks configured";
     return `Updated ${new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }).format(new Date(updated))} UTC`;
   });
-  const search = (current: DashboardShell, params: Params, crossFilters: readonly CrossFilterOrigin[]) => {
+  const search = (
+    current: DashboardShell, params: Params, crossFilters: readonly CrossFilterOrigin[],
+    drilldowns: Record<string, readonly string[]> = current.drilldowns,
+  ) => {
     const query = dashboardSearchParams({ ...current, params });
     for (const origin of crossFilters) query.append("_xf", `${origin.block}:${origin.param}`);
+    appendDrilldowns(query, drilldowns);
     if (fromParam) query.set("_from", fromParam);
     return query;
   };
   let generation = 0;
-  async function apply(params: Params, crossFilters: readonly CrossFilterOrigin[] = [], refresh = false) {
+  /** Drill-down paths survive cross-filters and refreshes; new dashboard filters start at the top level. */
+  async function apply(
+    params: Params, crossFilters: readonly CrossFilterOrigin[] = [], refresh = false,
+    drilldowns?: Record<string, readonly string[]>,
+  ) {
     const current = shell();
     if (!current) return;
-    const query = search(current, params, crossFilters);
+    const query = search(current, params, crossFilters, drilldowns ?? current.drilldowns);
     history.replaceState(null, "", `${location.pathname}${query.size ? `?${query}` : ""}`);
     setMenu(undefined);
     const run = ++generation;
@@ -192,23 +206,37 @@ function DashboardContent(props: AppProps) {
       location.href = action.href;
       return;
     }
+    if (action.kind === "drill") {
+      void apply(current.params, current.crossFilters, false, drillDown(current.drilldowns, blockId, action.value));
+      return;
+    }
     const next = applyAction(current.params, current.crossFilters, props.catalog, blockId, action);
     void apply(next.params, next.crossFilters);
   };
+  const depthOf = (blockId: string) => shell()?.drilldowns[blockId]?.length ?? 0;
   const interaction = (blockId: string): BlockInteraction => ({
     columns: (dataset) => {
       const ctx = context();
       if (!ctx) return [];
+      const drilling = drillColumn(dataset, depthOf(blockId));
       return dataset.columns.filter((column) => {
+        if (column.key === drilling) return true;
         const target = columnTarget(column);
         return target && (ctx.dashboard.params?.includes(target.name) || drillthroughTargets(ctx, target.name).length > 0);
       });
     },
-    select: (dataset, column, row, event) => {
+    select: (dataset, column, row, event, chart = false) => {
       const ctx = context();
       if (!ctx) return;
-      const value = row[column.key];
-      const actions = actionsFor(ctx, blockId, column, row, formatValue(value ?? null, column.format, locale()));
+      const depth = depthOf(blockId);
+      const drilling = drillColumn(dataset, depth);
+      const formatOf = (key: string) => dataset.columns.find((c) => c.key === key)?.format;
+      // Charts drill from any element; tables from the drill-down column's cells.
+      const drill = chart || column?.key === drilling
+        ? drillAction(dataset, depth, row, (value) => formatValue(value, formatOf(drilling!), locale())) : undefined;
+      const shown = column ?? dataset.columns.find((c) => c.key === drilling);
+      const display = shown ? formatValue(row[shown.key] ?? null, shown.format, locale()) : "";
+      const actions = [...(drill ? [drill] : []), ...(column ? actionsFor(ctx, blockId, column, row, display) : [])];
       if (!actions.length) return;
       if (actions.length === 1) return run(blockId, actions[0]!);
       const target = event?.target instanceof Element ? event.target.getBoundingClientRect() : undefined;
@@ -216,8 +244,13 @@ function DashboardContent(props: AppProps) {
       setMenu({
         x: pointer?.x ?? target?.left ?? innerWidth / 2,
         y: pointer?.y ?? (target ? target.bottom : innerHeight / 2),
-        blockId, title: `${dataset.label}: ${formatValue(value ?? null, column.format, locale())}`, actions,
+        blockId, title: `${dataset.label}: ${display}`, actions,
       });
+    },
+    drillPath: () => shell()?.drilldowns[blockId] ?? [],
+    drillTo: (depth) => {
+      const current = shell();
+      if (current) void apply(current.params, current.crossFilters, false, drillTo(current.drilldowns, blockId, depth));
     },
     selection: (dataset) => {
       const current = shell();
@@ -244,8 +277,13 @@ function DashboardContent(props: AppProps) {
       ]);
       // Only filters that narrow the data, so the caption stays short.
       const set = (name: string) => filterValue(current.params[name], props.catalog.params[name]!) !== "All";
-      return describeFilters((current.definition.params ?? []).filter((name) => !ignored.has(name) && set(name)),
+      const filters = describeFilters((current.definition.params ?? []).filter((name) => !ignored.has(name) && set(name)),
         current.params, props.catalog.params);
+      const block = blocks().get(blockId);
+      const path = current.drilldowns[blockId] ?? [];
+      const drill = block?.type === "dataset" && path.length
+        ? describeDrilldown(block.definition, path, (value, depth) => drillValue(block.definition, depth, value, locale())) : "";
+      return [filters, drill].filter(Boolean).join(" · ");
     },
     filename: () => `${shell()?.id ?? "dashboard"}-${blockId}`,
   });
@@ -290,7 +328,7 @@ function DashboardContent(props: AppProps) {
           <Show when={(definition()?.params?.length || 0) > 0}>
             <form
               class="filters"
-              onSubmit={(event) => { event.preventDefault(); void apply(draft()); }}
+              onSubmit={(event) => { event.preventDefault(); void apply(draft(), [], false, {}); }}
               autocomplete="off"
             >
               <For each={definition()?.params || []}>
@@ -365,7 +403,8 @@ function DashboardContent(props: AppProps) {
 function ActionMenu(props: { state: MenuState; close: () => void; run: (action: ClickAction) => void }) {
   let element!: HTMLDivElement;
   const label = (action: ClickAction) =>
-    action.kind === "filter" ? `Filter by ${action.label}`
+    action.kind === "drill" ? `Drill down to ${action.label}`
+    : action.kind === "filter" ? `Filter by ${action.label}`
       : action.kind === "clear" ? `Clear ${action.label} filter`
         : `Open ${action.label}`;
   onSettled(() => {
@@ -588,6 +627,14 @@ function Dataset(props: {
     ? props.result : { ...props.result, rows: [...ranked().rows] });
   const table = createMemo(() =>
     shapeTable(ranked().rows, props.definition, sort(), props.locale, complete(), ranked().members));
+  // A drill-down level can have other columns: drop a sort the new level cannot apply.
+  createEffect(
+    () => props.definition.columns,
+    (columns) => {
+      const current = untrack(sort);
+      if (current && !columns.some((column) => column.key === current.column)) setSort(props.definition.defaultSort);
+    },
+  );
   const pageSize = 8;
   const pageCount = () =>
     Math.max(1, Math.ceil(table().rows.length / pageSize));
@@ -639,6 +686,8 @@ function Dataset(props: {
     props.definition.chart
       ? chartColumns(props.definition, chartKeyColumns(props.definition.chart)).filter((c) => interactive().has(c.key))
       : []);
+  const depth = () => props.interaction.drillPath().length;
+  const drillable = () => drillColumn(props.definition, depth()) !== undefined;
   const chartSelect = (row: Row, event: MouseEvent | undefined) => {
     if (isOtherRow(row)) return;
     // The deepest identified column wins (e.g. a treemap leaf over its parent).
@@ -646,7 +695,7 @@ function Dataset(props: {
       const target = columnTarget(c);
       return target && row[target.from] !== undefined && row[target.from] !== null;
     });
-    if (column) props.interaction.select(props.definition, column, row, event);
+    if (column || drillable()) props.interaction.select(props.definition, column, row, event, true);
   };
   return (
     <>
@@ -655,6 +704,10 @@ function Dataset(props: {
           <h2>{props.definition.label}</h2>
           <Show when={props.definition.description}>
             <p>{props.definition.description}</p>
+          </Show>
+          <Show when={props.definition.drilldown}>
+            <DrillPath definition={props.definition} path={props.interaction.drillPath()} locale={props.locale}
+              go={props.interaction.drillTo} />
           </Show>
         </div>
         <div class="block-tools">
@@ -764,8 +817,9 @@ function Dataset(props: {
                               const row = entry.row;
                               const text = () => formatValue(row[column.key] ?? null, column.format, props.locale);
                               const target = columnTarget(column);
+                              const source = target?.from ?? column.key;
                               const clickable = () => interactive().has(column.key) && !isOtherRow(row)
-                                && target !== undefined && row[target.from] !== null && row[target.from] !== undefined;
+                                && row[source] !== null && row[source] !== undefined;
                               return (
                                 <td>
                                   <Show when={clickable()} fallback={text()}>
@@ -835,11 +889,51 @@ function Dataset(props: {
             result={shown()}
             locale={props.locale}
             selected={selection()}
-            onSelect={chartTargets().length ? chartSelect : undefined}
+            onSelect={chartTargets().length || drillable() ? chartSelect : undefined}
             register={(next) => { snapshot = next; }}
           />
         </Show>
       </Show>
     </>
+  );
+}
+
+/** A drill-down value as shown: periods by grain, other values as text. */
+function drillValue(definition: DatasetDefinition, depth: number, value: string, locale: string): string {
+  const grain = definition.drilldown?.[depth]?.grain;
+  return grain ? formatValue(value, { style: "date", grain }, locale) : value;
+}
+
+/** Breadcrumb for a drill-down block: the top level, each clicked value, then the level shown. */
+function DrillPath(props: { definition: DatasetDefinition; path: readonly string[]; locale: string; go: (depth: number) => void }) {
+  const levels = () => props.definition.drilldown ?? [];
+  const depth = () => props.path.length;
+  return (
+    <Show when={depth() > 0} fallback={
+      <p class="drill-hint">
+        Click a {levelLabel(props.definition, 0).toLowerCase()} to drill down to {levelLabel(props.definition, 1).toLowerCase()}
+      </p>
+    }>
+      <nav class="drill-path" aria-label={`${props.definition.label} drill-down`}>
+        <button type="button" class="drill-up" aria-label="Up one level" onClick={() => props.go(depth() - 1)}>↑</button>
+        <ol>
+          <li><button type="button" onClick={() => props.go(0)}>All</button></li>
+          <For each={[...props.path]}>
+            {(value, index) => (
+              <li>
+                <span aria-hidden="true">›</span>
+                <Show when={index() < depth() - 1}
+                  fallback={<span aria-current="location">{drillValue(props.definition, index(), value, props.locale)}</span>}>
+                  <button type="button" onClick={() => props.go(index() + 1)}>
+                    {drillValue(props.definition, index(), value, props.locale)}
+                  </button>
+                </Show>
+              </li>
+            )}
+          </For>
+        </ol>
+        <span class="drill-level">{levelLabel(props.definition, Math.min(depth(), levels().length - 1))}</span>
+      </nav>
+    </Show>
   );
 }

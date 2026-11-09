@@ -78,7 +78,7 @@ Controls follow the definition; there is no per-block configuration.
 
 ### Reserved query keys
 
-`api_key`, `refresh`, `_from`, `_xf`, `_format`, `_sort` and `_top` belong to the engine and are never validated as parameters; they cannot be used as parameter names. `refresh=true` bypasses the result cache, `_from` holds the drillthrough origin and `_xf` the cross-filter origins; the last three select an [export](#export).
+`api_key`, `refresh`, `_from`, `_xf`, `_dd`, `_format`, `_sort` and `_top` belong to the engine and are never validated as parameters; they cannot be used as parameter names. `refresh=true` bypasses the result cache, `_from` holds the drillthrough origin, `_xf` the cross-filter origins and `_dd` the [drill-down](#drill-down) paths; the last three select an [export](#export).
 
 ```ts
 // HTTP: ?period.from=2026-01-01&period.until=2026-06-30&region=North
@@ -337,7 +337,7 @@ dashboards: {
 
 The layout uses 12 columns on wide screens and collapses on smaller screens. Block IDs must be unique within a dashboard. The URL is `/dashboards/overview`; no page component is needed. A block that fails displays an error without hiding successful blocks.
 
-## Interaction: cross-filter and drillthrough
+## Interaction: cross-filter, drillthrough and drill-down
 
 Both use the same column annotations. Datasets never name a dashboard.
 
@@ -369,7 +369,77 @@ operations: {
 
 **One click.** When a value has one action, the click performs it. With two or more (for example, filter this dashboard and open Customer 360), a small menu opens next to the value. It works the same with a mouse, touch or keyboard: table values are buttons, the menu takes focus and supports arrow keys and Escape.
 
-The page shell is available as `GET /api/dashboard-shell/:name` (same parameters and `_xf`), returning `{ params, requests, missing, crossFilters, … }` without running queries.
+The page shell is available as `GET /api/dashboard-shell/:name` (same parameters, `_xf` and `_dd`), returning `{ params, requests, missing, crossFilters, drilldowns, … }` without running queries.
+
+### Drill-down
+
+A dataset can declare levels that a user walks down **inside its block**: Category → Brand → Product, or Year → Quarter → Month → Day. Clicking a value shows the next level for that value; a breadcrumb (`↑`, `All › Computers › Contoso`) goes back. The rest of the dashboard is unchanged: drilling narrows only that block. Use cross-filter to filter other blocks.
+
+The engine never infers the hierarchy from the data. Levels are listed in order, and **the value clicked at a level becomes a filter for every level below it**, in one of two ways:
+
+| Level | How it filters deeper levels | Who defines the relationship |
+| --- | --- | --- |
+| Categorical (`param`) | The clicked value becomes that parameter | The deeper query's `WHERE` |
+| Date (`range` + `grain`) | The clicked period start becomes a range: `2024-01-01` with `grain: "year"` is 2024-01-01 – 2024-12-31 | The engine, by period containment |
+
+```ts
+sales_drill: {
+  label: "Sales",
+  query: "by_category",
+  columns: [{ key: "category", label: "Category" }, revenue],
+  chart: { type: "bar", x: "category", series: [revenue] },
+  drilldown: [
+    { column: "category", param: "category" },
+    { query: "by_brand", column: "brand", param: "brand",
+      columns: [{ key: "brand", label: "Brand" }, revenue],
+      chart: { type: "bar", x: "brand", series: [revenue] } },
+    { query: "by_product", column: "product",
+      columns: [{ key: "product", label: "Product", param: "productName" }, revenue] },
+  ],
+},
+```
+
+`by_brand` must accept `category`, and `by_product` both `category` and `brand`; their `WHERE` decides what "belongs to" means.
+
+Date hierarchies usually share **one query**, whose grain is a bound value rather than SQL text:
+
+```ts
+// Query: SELECT CAST(date_trunc(?, order_date) AS DATE) AS period, SUM(revenue) AS revenue ... GROUP BY 1 ORDER BY 1
+// with values [params.grain, ...]; grain is a select parameter with options year, quarter, month and day.
+period_drill: {
+  label: "Revenue by period",
+  query: "sales_by_period",
+  columns: [{ key: "period", label: "Period" }, revenue],
+  chart: { type: "bar", x: "period", series: [revenue] },
+  drilldown: [
+    { column: "period", label: "Year", range: "period", grain: "year", set: { grain: "year" } },
+    { column: "period", label: "Month", range: "period", grain: "month", set: { grain: "month" } },
+    { column: "period", label: "Day", grain: "day", set: { grain: "day" } },
+  ],
+},
+```
+
+Level properties:
+
+| Property | Meaning |
+| --- | --- |
+| `column` | Column holding the value a click drills into. Charts drill from any element of the row; tables from this column's cells. |
+| `query` | This level's query; defaults to the dataset's. |
+| `label` | Breadcrumb and menu name; defaults to the column's label. |
+| `param` | Categorical levels: the parameter the clicked value sets. Array parameters receive `[value]`. |
+| `range`, `grain` | Date levels: a date range parameter and the period length (`year`, `quarter`, `month`, `day`) of `column`'s values. Values must start each period (`date_trunc`); `YYYY` and `YYYY-MM` are also read. |
+| `grain` alone | Formats the column as periods: `2024`, `Q1 2024` (`T1` in Portuguese), `Jan 2024`. Any date column can use `format: { style: "date", grain }`. |
+| `set` | Fixed parameter values for this level's query, such as `{ grain: "month" }`. These parameters cannot also be dashboard filters. |
+| `columns`, `chart` | This level's columns and chart, when they differ from the dataset's. |
+
+Rules:
+
+- **Validation at startup.** At least two levels. Every level but the last needs `param` or `range` (not both); the last needs neither. Each level's column, chart and table options must match its columns. Every deeper query must accept what an upper level passes, and every level's query must accept the dashboard's filters (or list them in `unfiltered`), like any block.
+- **Never wider than the dashboard.** A date level intersects its period with the dashboard's range: with the dashboard on June 2024 – June 2025, clicking 2024 shows June – December 2024. A period entirely outside the filter is an error for that block only.
+- **State.** The path travels in the URL as ordered `_dd=<block>:<value>` keys, so reloading, sharing and "back" reproduce it. It survives cross-filters and refresh. Applying new dashboard filters returns every block to its top level. Invalid blocks are ignored and extra levels trimmed.
+- **Clicks.** When the clicked column also has a parameter annotation, the menu offers "Drill down to Brand" first, then cross-filter and drillthrough.
+- **Downloads and images** use the current level. The Excel Filters sheet and image captions list the path, for example `Category: Computers › Brand: Contoso`. Printing shows the breadcrumb without its buttons.
+- **API.** `/api/dashboard-shell`, `/api/dashboard-data`, `/api/dashboards` and `/api/dashboard-export` accept `_dd`. `/api/datasets/:name` always returns the top level.
 
 ## Export
 

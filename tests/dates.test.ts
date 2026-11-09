@@ -77,8 +77,8 @@ describe("parameters", () => {
     expect(parseParams(definitions, ["client", "kind"], { client: "500123", kind: "any" })).toEqual({ client: "500123", kind: "any" });
   });
   test("reserved query keys never reach parameter validation", () => {
-    expect(reservedParams).toEqual(["api_key", "refresh", "_from", "_xf", "_format", "_sort", "_top"]);
-    const raw = readParams(new URLSearchParams("api_key=secret&refresh=true&_from=/dashboards/a&_xf=b:c&year=2026"), definitions);
+    expect(reservedParams).toEqual(["api_key", "refresh", "_from", "_xf", "_dd", "_format", "_sort", "_top"]);
+    const raw = readParams(new URLSearchParams("api_key=secret&refresh=true&_from=/dashboards/a&_xf=b:c&_dd=b:2024&year=2026"), definitions);
     expect(raw).toEqual({ year: "2026" });
     expect(parseParams(definitions, ["year"], raw)).toEqual({ year: 2026 });
   });

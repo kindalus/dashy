@@ -487,6 +487,72 @@ main {
   font-size: 12px;
   margin-top: 5px;
 }
+.drill-hint {
+  color: var(--muted);
+}
+.drill-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+.drill-path ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.drill-path li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.drill-path li > span[aria-hidden] {
+  color: var(--muted);
+}
+.drill-path li button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--accent-border);
+  text-underline-offset: 3px;
+}
+.drill-path li button:hover {
+  text-decoration-color: currentColor;
+}
+.drill-path [aria-current] {
+  font-weight: 600;
+  color: var(--text);
+}
+.drill-up {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-button);
+  background: var(--surface);
+  color: var(--text);
+  line-height: 1;
+}
+.drill-up:hover {
+  background: var(--surface-hover);
+}
+.drill-level {
+  padding: 2px 8px;
+  border-radius: var(--radius-button);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
 .view-toggle {
   display: flex;
   background: var(--surface-hover);
@@ -1235,6 +1301,8 @@ tr.other-row td {
   .view-toggle,
   .table-footer > div,
   .action-menu,
+  .drill-up,
+  .drill-hint,
   .block-loading {
     display: none !important;
   }

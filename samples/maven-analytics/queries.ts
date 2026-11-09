@@ -211,6 +211,21 @@ export const queries = {
     FROM filtered ORDER BY order_date DESC, order_number DESC, line_item`,
     true,
   ),
+  /** Revenue per period start; the drill-down level fixes the grain. */
+  sales_by_period: {
+    label: "Revenue by period",
+    sources: sourceNames,
+    params: [...filters, "productName", "grain"],
+    build(context) {
+      const base = sales(context);
+      // The grain is a bound value, never SQL text; the parameter accepts only listed options.
+      return {
+        text: `${base.text} SELECT CAST(date_trunc(?, order_date) AS DATE) AS period, SUM(revenue) AS revenue,
+        COUNT(DISTINCT order_number) AS orders FROM filtered GROUP BY 1 ORDER BY 1`,
+        values: [...base.values, (context.params.grain as string | undefined) ?? "month"],
+      };
+    },
+  } satisfies QueryDefinition,
   /** Options for the brand filter; they follow the selected category. */
   brand_options: {
     label: "Brands",

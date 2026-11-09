@@ -15,6 +15,7 @@ import {
   type Authentication,
 } from "../core/http";
 import { readCrossFilters } from "../core/engine";
+import { readDrilldowns } from "../core/drilldown";
 import { DashyError, readParams } from "../core/params";
 import { readThemeCookie, viewerTheme } from "../core/theme";
 import clientAssets from "./entry-client?assets=client";
@@ -63,7 +64,9 @@ export default {
         catalog,
         theme: theme.name,
         dashboard: id && kind === "dashboards"
-          ? engine.dashboardShell(id, raw, principal, { crossFilters: readCrossFilters(url.searchParams) })
+          ? engine.dashboardShell(id, raw, principal, {
+              crossFilters: readCrossFilters(url.searchParams), drilldowns: readDrilldowns(url.searchParams),
+            })
           : null,
         ...(id && kind === "pages" ? { page: engine.pageShell(id, raw, principal) } : {}),
       };
