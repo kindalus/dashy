@@ -182,7 +182,10 @@ export const queries = {
   categories: query(
     "Category performance",
     `SELECT category, SUM(revenue) AS revenue,
-    SUM(revenue - cost) AS profit, SUM(quantity) AS units FROM filtered GROUP BY 1 ORDER BY revenue DESC`,
+    SUM(revenue - cost) AS profit, SUM(quantity) AS units,
+    SUM(revenue - cost) / NULLIF(SUM(revenue), 0) AS margin,
+    SUM(revenue) / NULLIF(SUM(SUM(revenue)) OVER (), 0) AS share
+    FROM filtered GROUP BY 1 ORDER BY revenue DESC`,
   ),
   products: query(
     "Top 25 products",

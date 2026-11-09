@@ -174,7 +174,7 @@ Every chart can switch to a table. Omit `chart` for a table-only dataset. Column
 
 | `type` | Columns | Use |
 | --- | --- | --- |
-| `cartesian` | `x`, `series[]` with `as` (`line`, `bar`, `area`, `scatter`), `axis` (`left`/`right`), `stack`, `smooth`; `xType` (`category`, `time`, `value`); `orientation` (`vertical`/`horizontal`) | lines, bars, areas, stacks, combinations, dual axes, scatter |
+| `cartesian` | `x`, `series[]` with `as` (`line`, `bar`, `area`, `scatter`), `axis` (`left`/`right`), `stack`, `smooth`; `xType` (`category`, `time`, `value`); `orientation` (`vertical`/`horizontal`) | lines, bars, areas, stacks, combinations, dual axes (use sparingly), scatter |
 | `line`, `bar`, `area` | as `cartesian`; shorthand for one series kind | existing projects keep working |
 | `pie` | `category`, `value`, `donut?` | shares |
 | `funnel` | `category`, `value` | ordered stages |
@@ -227,9 +227,15 @@ columns: [
 
 Dashboards turn these annotations into [cross-filters and drillthrough](#interaction-cross-filter-and-drillthrough). The catalog exposes them, so API clients can chain datasets that accept the same parameter. Range parameters cannot be column parameters.
 
+**Presentation defaults.** Lines are 2 px. Series longer than eight points hide their point markers, which reappear on hover. Areas fade towards the baseline. Bars round their ends by the theme's `--chart-bar-radius` (0 in Excel and Cognos); stacked segments stay square, separated by a hairline of the surface colour. The legend sits top left with square swatches. A single line or area on a category axis labels its last value, and one stack of lines or areas labels its total. Horizontal single-series bars name each bar above it, write the value at its end and hide the value axis. Date columns with `format: { style: "date", grain }` label the axis as periods (jan 2020). Value axes use short numbers (2,5 mi). Grid lines are dashed or solid per theme (`--chart-grid-style`).
+
+**Dual axes.** `axis: "right"` remains available, but two value scales invite comparing heights that do not share a unit. Prefer a separate chart, a metric card or values indexed to a common base; the Maven sample no longer uses dual axes.
+
 ### Sorting, totals, subtotals and Top N
 
 Every table column heading sorts: ascending, descending, then back to the query's order. Numbers and numeric strings sort numerically (integers beyond 2^53 exactly), text uses the project locale, and empty values stay last in both directions. Sorting changes the table only; charts keep the query's order. `defaultSort` sets the initial order.
+
+`bar: true` on a numeric column draws an in-cell bar proportional to the column's largest value among the rows shown, behind the value. It is presentation only and never changes exports.
 
 A column's `aggregate` declares how it combines across rows: `sum`, `count` (non-empty values), `min`, `max` and `avg` (numeric values only), or `{ ratio: [numerator, denominator] }`, which divides the two other columns' sums. Use a ratio for margins and rates; averaging row ratios gives the wrong total. Use `sum` on a count column only when rows cannot overlap, e.g. orders per country when every order has one country.
 
@@ -279,6 +285,8 @@ metrics: {
 ```
 
 A missing column or multiple result rows is an error. No rows or a SQL `NULL` gives a null metric, displayed as an em dash. Use `COALESCE` in SQL when zero is the intended business meaning.
+
+Metric cards show values from one million in short form with three significant digits, following the project locale (`US$ 9,29 mi` in `pt`, `$9.29M` in `en`), so long values never wrap. The exact value stays in the tooltip and is read by screen readers. Set `format: { compact: false }` to always show the full value, or `compact: true` to shorten smaller values too. `compact` also works in dataset columns.
 
 ### Comparison, target and sparkline
 
@@ -553,23 +561,22 @@ markup or external icon URLs.
 
 ## Chart palette
 
-The selected theme assigns colors by series position. Excel uses this palette with moderate saturation:
+The selected theme assigns colors by series position. Excel uses this palette:
 
-| Position | Color            | Token       |
-| -------- | ---------------- | ----------- |
-| 1        | Green `#39865b`  | `--chart-1` |
-| 2        | Blue `#4e79b7`   | `--chart-2` |
-| 3        | Gold `#b58a35`   | `--chart-3` |
-| 4        | Teal `#3d8f9b`   | `--chart-4` |
-| 5        | Purple `#8c6bb1` | `--chart-5` |
-| 6        | Orange `#c87945` | `--chart-6` |
+| Position | Color             | Token       |
+| -------- | ----------------- | ----------- |
+| 1        | Green `#1f7a4d`   | `--chart-1` |
+| 2        | Blue `#2f6fd6`    | `--chart-2` |
+| 3        | Orange `#d4680a`  | `--chart-3` |
+| 4        | Magenta `#c43d79` | `--chart-4` |
+| 5        | Gold `#a07800`    | `--chart-5` |
+| 6        | Purple `#7f56cf`  | `--chart-6` |
 
-This is a manually selected categorical palette, not a color calculation based on
+Every theme's palette is checked by `tests/palettes.test.ts`. Each colour sits in a lightness band (OKLCH L 0.43–0.77 on light surfaces, 0.48–0.67 on dark), is saturated enough not to read as grey (chroma at least 0.10) and has at least 3:1 contrast with the chart surface. Neighbouring colours, which colour adjacent series, differ by at least 15 (OKLab ΔE×100) for normal vision and 8 under simulated protanopia and deuteranopia. That is why some palettes alternate warm and cool hues. This is a manually selected categorical palette, not a color calculation based on
 the values or series names. After six series it repeats. An explicit
 `chart.series[].color` overrides the corresponding slot. To keep a particular
 metric the same color in different charts regardless of order, set its `color`
 explicitly. The theme does not yet assign colors by semantic key.
 
 See [theme configuration](themes.md) for all eight themes, the viewer theme selector and independent input,
-button and panel corners. Metric values use a separate theme token, so Excel's
-metrics retain the stronger green while chart series use moderately saturated shades.
+button and panel corners. Metric values use a separate theme token (`--metric-color`).

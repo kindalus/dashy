@@ -32,10 +32,38 @@
   --danger-border: #e3b3b6;
   --danger-soft: #fdf3f4;
   --chart-1: #2f80d1;
-  --chart-2: #f2994a;
-  --chart-3: #27a39b;
+  --chart-2: #e07a1f;
+  --chart-3: #0f9a8f;
   --chart-4: #7b61c4;
-  --chart-5: #d6b23a;
-  --chart-6: #5b6b7d;
+  --chart-5: #b8860b;
+  --chart-6: #c2408f;
+  --chart-grid-style: dashed;
+  --chart-bar-radius: 3;
+  --chart-focus: off;
+  --chart-muted: #c4c4c4;
+  --chart-bar-style: solid;
   --chart-grid: #e6eaef;
 }
+
+/* Signature: dossier chapters in the top bar, panels with a title strip, comparison chips and
+   red selection. */
+:root[data-theme="microstrategy"] .topbar { padding-top: 0; padding-bottom: 0; align-self: stretch; }
+:root[data-theme="microstrategy"] .breadcrumb { display: none; }
+:root[data-theme="microstrategy"] .topbar-chapters { display: flex; align-self: stretch; margin-right: auto; }
+:root[data-theme="microstrategy"] .topbar-chapters a { display: flex; align-items: center; padding: 0 14px; color: #c7cfd9; font-size: 13px; }
+:root[data-theme="microstrategy"] .topbar-chapters a:hover { color: #ffffff; }
+:root[data-theme="microstrategy"] .topbar-chapters a[aria-current="page"] { color: #ffffff; font-weight: 600; box-shadow: inset 0 -3px 0 #c8202b; }
+:root[data-theme="microstrategy"] .block { border-radius: 2px; }
+:root[data-theme="microstrategy"] .data-block { padding: 0; }
+:root[data-theme="microstrategy"] .data-block .block-content > :not(.block-heading) { margin-left: 18px; margin-right: 18px; }
+:root[data-theme="microstrategy"] .data-block .block-content > :last-child { margin-bottom: 16px; }
+:root[data-theme="microstrategy"] .data-block .block-heading { margin-bottom: 14px; padding: 9px 18px; background: #f4f6f9; border-bottom: 1px solid #dde3ea; align-items: center; }
+:root[data-theme="microstrategy"] .data-block .block-heading h2 { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: #46515e; }
+:root[data-theme="microstrategy"] .metric-block { border-top: 0; }
+:root[data-theme="microstrategy"] .metric-compare { width: fit-content; padding: 2px 6px; border-radius: 2px; background: #eef1f5; color: #46515e; font-weight: 600; }
+:root[data-theme="microstrategy"] .metric-compare.tone-bad { background: #fbeaeb; color: #a51a23; }
+:root[data-theme="microstrategy"] .metric-compare.tone-good { background: #e3f3e9; color: #1f6b43; }
+:root[data-theme="microstrategy"] .metric-compare .metric-arrow { color: inherit; }
+:root[data-theme="microstrategy"] .filter-chip.is-set { border-color: #c8202b; background: #fbeaeb; color: #a51a23; }
+:root[data-theme="microstrategy"] .filter-chip.is-set .chip-label { color: #a51a23; }
+:root[data-theme="microstrategy"] .metric-change { color: inherit; }

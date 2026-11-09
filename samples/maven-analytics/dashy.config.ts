@@ -130,10 +130,11 @@ export default defineProject({
   datasets: {
     monthly: {
       label: "Sales over time",
-      description: "Revenue in USD by channel (stacked) and orders on the right axis.",
+      description: "Revenue in USD by channel, stacked. The table view adds orders.",
       query: "monthly",
       columns: [
-        { key: "month", label: "Month" },
+        // Months as periods: the axis reads "jan 2020" rather than 2020-01.
+        { key: "month", label: "Month", format: { style: "date", grain: "month" } },
         { key: "online", label: "Online", format: usd },
         { key: "store", label: "In store", format: usd },
         { key: "orders", label: "Orders", format: { decimals: 0 } },
@@ -144,7 +145,6 @@ export default defineProject({
         series: [
           { key: "online", label: "Online", format: usd, as: "area", stack: "revenue" },
           { key: "store", label: "In store", format: usd, as: "area", stack: "revenue" },
-          { key: "orders", label: "Orders", format: { decimals: 0 }, as: "line", axis: "right" },
         ],
       },
     },
@@ -169,8 +169,22 @@ export default defineProject({
       label: "Sales by category",
       description: "Click a category to filter the dashboard.",
       query: "categories",
-      columns: [category, revenue, profit, units],
-      chart: { type: "bar", x: "category", series: [revenue, profit] },
+      columns: [category, { ...revenue, bar: true }, profit, units],
+      chart: { type: "bar", x: "category", orientation: "horizontal", series: [revenue] },
+    },
+    category_performance: {
+      label: "Category performance",
+      description: "Revenue, profit, margin and share of revenue. Click a category to filter the dashboard.",
+      query: "categories",
+      columns: [
+        category,
+        { ...revenue, bar: true, format: { ...usd, compact: true } },
+        { ...profit, format: { ...usd, compact: true } },
+        { key: "margin", label: "Margin", format: percent, aggregate: { ratio: ["profit", "revenue"] } },
+        { key: "share", label: "Share", format: percent, aggregate: "sum" },
+      ],
+      totals: true,
+      defaultSort: { column: "revenue", direction: "desc" },
     },
     category_mix: {
       label: "Category mix",
@@ -220,7 +234,7 @@ export default defineProject({
       description: "Revenue and orders by year, quarter, month and day.",
       query: "sales_by_period",
       columns: [{ key: "period", label: "Period" }, revenue, { key: "orders", label: "Orders", aggregate: "sum" }],
-      chart: { type: "bar", x: "period", series: [revenue, { key: "orders", label: "Orders", as: "line", axis: "right" }] },
+      chart: { type: "bar", x: "period", series: [revenue] },
       drilldown: [
         { column: "period", label: "Year", range: "period", grain: "year", set: { grain: "year" } },
         { column: "period", label: "Quarter", range: "period", grain: "quarter", set: { grain: "quarter" } },
@@ -297,7 +311,7 @@ export default defineProject({
         brand,
         category,
         units,
-        revenue,
+        { ...revenue, bar: true },
         profit,
         // A ratio of sums: the total margin is total profit over total revenue.
         { key: "margin", label: "Margin", format: percent, aggregate: { ratio: ["profit", "revenue"] } },
@@ -400,9 +414,9 @@ export default defineProject({
         metric("profit"),
         metric("orders"),
         metric("catalogue"),
-        dataset("monthly"),
-        dataset("categories", 8),
-        dataset("category_mix", 4),
+        dataset("monthly", 8),
+        dataset("categories", 4),
+        dataset("category_performance", 12, "table"),
       ],
     },
     products: {

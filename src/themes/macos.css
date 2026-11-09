@@ -13,17 +13,17 @@
   --nav-group: #666b76;
   --line: #d9dce3;
   --control-border: #b5bac5;
-  --accent: #2864b5;
-  --accent-hover: #1b5098;
+  --accent: #0a72e0;
+  --accent-hover: #075fbd;
   --accent-soft: #dae6f7;
   --accent-border: #9ab8de;
   --on-accent: #ffffff;
-  --focus: #3483d6;
+  --focus: #0a72e0;
   --header-background: #f7f8fae8;
   --header-text: #454954;
   --header-border: #d9dce3;
   --header-badge-border: #bec7d5;
-  --metric-color: #385e91;
+  --metric-color: #1d1d1f;
   --metric-border: #a3bada;
   --metric-font-size: clamp(18px, 12cqi, 36px);
   --panel-shadow: 0 1px 3px #242c3d10, 0 6px 18px #242c3d06;
@@ -33,11 +33,50 @@
   --danger: #a4262c;
   --danger-border: #e3b3b6;
   --danger-soft: #fdf3f4;
-  --chart-1: #4b7fbc;
-  --chart-2: #488965;
-  --chart-3: #9366ab;
-  --chart-4: #b78b32;
-  --chart-5: #c26c61;
-  --chart-6: #328b99;
+  --chart-1: #0a72e0;
+  --chart-2: #1f9e3a;
+  --chart-3: #a24bd6;
+  --chart-4: #d97400;
+  --chart-5: #1b9bb0;
+  --chart-6: #e0335a;
+  --chart-grid-style: dashed;
+  --chart-bar-radius: 3;
+  --chart-focus: off;
+  --chart-muted: #c4c4c4;
+  --chart-bar-style: solid;
   --chart-grid: #e2e5eb;
+}
+
+/* Signature: a translucent sidebar over a soft wallpaper with a filled selection, the title in
+   a unified toolbar, filters as pop-up buttons without a box, and grouped boxes. */
+:root[data-theme="macos"] .workspace { background: radial-gradient(circle at 6% 12%, #b8cdf6 0, transparent 28%), radial-gradient(circle at 10% 78%, #f3c8d8 0, transparent 26%), #e9ebf1; }
+:root[data-theme="macos"] .main-column { background: var(--canvas); }
+:root[data-theme="macos"] .sidebar { background: rgb(236 238 242 / 66%); backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6); border-right-color: rgb(0 0 0 / 8%); }
+:root[data-theme="macos"] .nav-item { border-radius: 6px; }
+:root[data-theme="macos"] .nav-item[aria-current="page"] { background: #0a72e0; color: #ffffff; box-shadow: none; }
+:root[data-theme="macos"] .topbar { min-height: 52px; }
+:root[data-theme="macos"] .breadcrumb { display: none; }
+:root[data-theme="macos"] .topbar-title { display: inline; margin-right: auto; font-size: 17px; font-weight: 700; color: #1d1d1f; }
+@media (min-width: 721px) {
+  :root[data-theme="macos"] .page-heading > div:first-child { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  :root[data-theme="macos"] .page-heading { justify-content: flex-end; margin-bottom: 12px; }
+}
+:root[data-theme="macos"] .filters { background: transparent; border: 0; box-shadow: none; padding: 0; }
+:root[data-theme="macos"] .filter-chip { border-radius: 6px; background: #ffffff; border-color: #d1d4db; box-shadow: 0 0.5px 1px rgb(0 0 0 / 8%); }
+:root[data-theme="macos"] .block { border-radius: 10px; border-color: #e5e5ea; box-shadow: 0 1px 2px rgb(0 0 0 / 5%); }
+:root[data-theme="macos"] .view-toggle { background: #e3e4e8; border: 0; border-radius: 7px; padding: 2px; }
+:root[data-theme="macos"] .view-toggle button { border-radius: 5px; }
+:root[data-theme="macos"] .view-toggle button[aria-pressed="true"] { background: #ffffff; color: #1d1d1f; box-shadow: 0 1px 2px rgb(0 0 0 / 15%); }
+@media (min-width: 1151px) {
+  :root[data-theme="macos"] .dashboard-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; align-items: center; }
+  :root[data-theme="macos"] .dashboard-body > * { grid-column: 1 / -1; }
+  :root[data-theme="macos"] .dashboard-body > .back-link { grid-row: 1; }
+  /* Fixed rows, so auto-placement never puts later parts above the toolbar row. */
+  :root[data-theme="macos"] .dashboard-body > .print-summary { grid-row: 3; }
+  :root[data-theme="macos"] .dashboard-body > .cross-filters { grid-row: 4; }
+  :root[data-theme="macos"] .dashboard-body > .required-state { grid-row: 5; }
+  :root[data-theme="macos"] .dashboard-body > noscript { grid-row: 6; }
+  :root[data-theme="macos"] .dashboard-body > .dashboard-grid { grid-row: 7; }
+  :root[data-theme="macos"] .dashboard-body > .page-heading { grid-column: 2; grid-row: 2; margin-bottom: 0; }
+  :root[data-theme="macos"] .dashboard-body > .filters { grid-column: 1; grid-row: 2; margin-bottom: 16px; }
 }

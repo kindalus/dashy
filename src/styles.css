@@ -54,7 +54,7 @@ h1 {
   line-height: 1.2;
 }
 h2 {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
 }
 p {
@@ -196,8 +196,19 @@ p {
   height: 6px;
 }
 .main-column {
+  /* Page gutters as variables, so theme bars (formula bar, tabs, status line) can run edge to edge. */
+  --pad-x: 36px;
+  --pad-y: 34px;
+  --pad-bottom: 64px;
   flex: 1;
   min-width: 0;
+  /* Content grows; bottom bars (tabs, status line) sit at the foot of the viewport or stick there. */
+  display: flex;
+  flex-direction: column;
+}
+.main-column > main {
+  flex: 1 0 auto;
+  width: 100%;
 }
 .topbar {
   min-height: 56px;
@@ -230,7 +241,7 @@ p {
 }
 main {
   max-width: 1650px;
-  padding: 34px 36px 64px;
+  padding: var(--pad-y) var(--pad-x) var(--pad-bottom);
   margin: 0 auto;
 }
 .page-heading {
@@ -238,7 +249,14 @@ main {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  margin-bottom: 28px;
+  margin-bottom: 20px;
+}
+/* "Updated 09:33" sits with the page actions, so the data starts higher. */
+.page-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
 }
 .page-heading p {
   margin-top: 9px;
@@ -271,12 +289,155 @@ main {
   display: flex;
   flex-wrap: wrap;
   align-items: end;
-  gap: 18px;
+  gap: 14px;
   background: var(--surface);
   border: 1px solid var(--line);
-  padding: 19px 22px;
+  padding: 14px 18px;
   border-radius: var(--radius-panel);
   box-shadow: var(--panel-shadow);
+}
+/* The first filters stay in one row; the rest wait behind "More filters". */
+.dashboard-body > .filters {
+  margin-bottom: 20px;
+}
+.filter-slot {
+  display: contents;
+}
+.filter-slot.is-collapsed {
+  display: none;
+}
+/* Theme signatures; each theme that uses one shows it. */
+.formula-bar,
+.page-tabs,
+.table-sum,
+.status-line,
+.filter-prompt,
+.metric-blocks,
+.col-letters,
+.cell-ref,
+.chip-flag,
+.topbar-title,
+.topbar-product,
+.topbar-chapters,
+.workspace-badge {
+  display: none;
+}
+.topbar-status {
+  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+/* The live status region stays for screen readers; the top bar shows it on wide screens. */
+@media (min-width: 721px) {
+  .page-side .update-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+/* Filter chips: label and value in one control; the control itself opens in a popover. */
+.filters:has(.filter-chip) {
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+.filter-chip-wrap {
+  position: relative;
+}
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.filter-chip:hover {
+  background: var(--surface-hover);
+}
+.chip-label {
+  color: var(--muted);
+}
+.chip-label::after {
+  content: ":";
+}
+.chip-value {
+  font-weight: 600;
+  /* Long values (a product name) end in an ellipsis; the chip's tooltip has the full value. */
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.filter-chip::after {
+  content: "▾";
+  color: var(--muted);
+  font-size: 10px;
+}
+.filter-chip.is-set {
+  border-color: var(--accent-border);
+}
+.more-filters {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px dashed var(--control-border);
+  border-radius: var(--radius-input);
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.chip-popover {
+  position: fixed;
+  z-index: 30;
+  width: min(380px, calc(100vw - 16px));
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 16%);
+  font-weight: 400;
+}
+.chip-popover .filter-field {
+  min-width: 0;
+}
+.chip-popover-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.metric-sparkline .spark-area {
+  fill: var(--accent);
+  opacity: 0.14;
+}
+.metric-sparkline .spark-end {
+  fill: var(--accent);
+}
+/* In-cell bars sit behind the value. */
+td.has-bar {
+  position: relative;
+  isolation: isolate;
+}
+.data-bar {
+  position: absolute;
+  left: 6px;
+  top: 7px;
+  bottom: 7px;
+  max-width: calc(100% - 12px);
+  z-index: -1;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--chart-1) 22%, transparent);
 }
 .filter-field {
   min-width: 160px;
@@ -334,10 +495,7 @@ main {
 .update-status {
   font-size: 12px;
   color: var(--muted);
-  min-height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
+  white-space: nowrap;
 }
 .dashboard-grid {
   display: grid;
@@ -393,8 +551,7 @@ main {
 }
 .metric-block {
   container-type: inline-size;
-  padding: 22px 24px;
-  min-height: 142px;
+  padding: 18px 20px;
   border-top: 3px solid var(--metric-border);
 }
 .metric-block h2 {
@@ -409,7 +566,10 @@ main {
   letter-spacing: -0.4px;
   margin-top: 12px;
   font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
+  /* Compact values fit; never break a number across lines. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   line-height: 1.2;
 }
 .metric-compare {
@@ -428,6 +588,15 @@ main {
 }
 .metric-compare.tone-bad .metric-arrow {
   color: var(--danger);
+}
+/* The change itself carries the tone too, next to its arrow and sign. */
+.metric-compare.tone-good .metric-change {
+  color: var(--success);
+  font-weight: 600;
+}
+.metric-compare.tone-bad .metric-change {
+  color: var(--danger);
+  font-weight: 600;
 }
 .metric-target {
   margin-top: 10px;
@@ -596,7 +765,6 @@ td,
 th {
   padding: 11px 14px;
   border-bottom: 1px solid var(--line);
-  border-right: 1px solid var(--line);
   font-variant-numeric: tabular-nums;
 }
 td {
@@ -867,7 +1035,9 @@ ul.popover.option-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 12px;
+  /* The filter bar above already leaves its gap; keep the same gap before the blocks. */
+  margin-top: -8px;
+  margin-bottom: 20px;
 }
 .back-link {
   display: inline-flex;
@@ -1082,8 +1252,9 @@ tr.other-row td {
   .topbar {
     padding: 12px 24px;
   }
-  main {
-    padding: 28px 24px;
+  .main-column {
+    --pad-x: 24px;
+    --pad-y: 28px;
   }
   .block {
     grid-column: span 6;
@@ -1134,7 +1305,8 @@ tr.other-row td {
   .mobile-brand .brand-name {
     color: var(--header-text);
   }
-  .workspace-badge {
+  .workspace-badge,
+  .topbar-status {
     display: none;
   }
   .breadcrumb {
@@ -1157,8 +1329,10 @@ tr.other-row td {
     padding: 7px;
     border-radius: var(--radius-input);
   }
-  main {
-    padding: 24px 16px 40px;
+  .main-column {
+    --pad-x: 16px;
+    --pad-y: 24px;
+    --pad-bottom: 40px;
   }
   .page-heading {
     align-items: start;
@@ -1358,6 +1532,9 @@ tr.other-row td {
   .action-menu,
   .drill-up,
   .drill-hint,
+  .formula-bar,
+  .page-tabs,
+  .more-filters,
   .block-loading {
     display: none !important;
   }

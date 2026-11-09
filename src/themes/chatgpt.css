@@ -11,8 +11,8 @@
   --nav-group: #707070;
   --line: #e5e5e5;
   --control-border: #c8c8c8;
-  --accent: #353535;
-  --accent-hover: #202020;
+  --accent: #0d0d0d;
+  --accent-hover: #000000;
   --accent-soft: #eaeaea;
   --accent-border: #b7b7b7;
   --on-accent: #ffffff;
@@ -21,8 +21,8 @@
   --header-text: #454545;
   --header-border: #e8e8e8;
   --header-badge-border: #d5d5d5;
-  --metric-color: #374c47;
-  --metric-border: #b2c6bf;
+  --metric-color: #0d0d0d;
+  --metric-border: #ececec;
   --metric-font-size: clamp(18px, 12cqi, 36px);
   --panel-shadow: none;
   --header-blur: none;
@@ -31,11 +31,36 @@
   --danger: #a4262c;
   --danger-border: #e3b3b6;
   --danger-soft: #fdf3f4;
-  --chart-1: #43876b;
-  --chart-2: #577eab;
-  --chart-3: #ad843e;
-  --chart-4: #8c6fab;
-  --chart-5: #b96e65;
-  --chart-6: #398e9c;
+  --chart-1: #13906d;
+  --chart-2: #4a6fd1;
+  --chart-3: #d9762e;
+  --chart-4: #8d5ccc;
+  --chart-5: #b88a1e;
+  --chart-6: #cc4f7a;
+  --chart-grid-style: dashed;
+  --chart-bar-radius: 4;
+  --chart-focus: on;
+  --chart-muted: #c9c9c9;
+  --chart-bar-style: solid;
   --chart-grid: #e9e9e9;
 }
+
+/* Signature: no boxes, a narrow centred column, metrics as loose numbers between hairlines,
+   pills, and charts in focus (grey context, one accent). */
+:root[data-theme="chatgpt"] .sidebar { border-right: 0; background: #f9f9f9; }
+:root[data-theme="chatgpt"] .nav-item { border-radius: 8px; }
+:root[data-theme="chatgpt"] .nav-item[aria-current="page"] { background: #ececec; color: #0d0d0d; box-shadow: none; }
+:root[data-theme="chatgpt"] .topbar { border-bottom: 0; }
+:root[data-theme="chatgpt"] .breadcrumb { display: none; }
+:root[data-theme="chatgpt"] .topbar-title { display: inline; margin-right: auto; color: #8f8f8f; }
+:root[data-theme="chatgpt"] main { max-width: 980px; }
+:root[data-theme="chatgpt"] .block { border: 0; box-shadow: none; background: transparent; border-radius: 0; }
+:root[data-theme="chatgpt"] .data-block { padding: 18px 0 0; border-top: 1px solid #ececec; }
+:root[data-theme="chatgpt"] .metric-block { border: 0; border-left: 1px solid #ececec; padding: 0 18px; }
+:root[data-theme="chatgpt"] .dashboard-grid > .metric-block:first-child { border-left: 0; padding-left: 0; }
+:root[data-theme="chatgpt"] .metric-value { font-weight: 500; }
+:root[data-theme="chatgpt"] .filters { background: transparent; border: 0; box-shadow: none; padding: 0; }
+:root[data-theme="chatgpt"] .filter-chip { border-radius: 999px; background: #f4f4f4; border-color: #f4f4f4; }
+:root[data-theme="chatgpt"] .more-filters { border-radius: 999px; }
+:root[data-theme="chatgpt"] .button { border-radius: 999px; }
+:root[data-theme="chatgpt"] th { background: transparent; color: #8f8f8f; }

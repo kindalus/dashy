@@ -1,41 +1,84 @@
 :root[data-theme="claude-code"] {
   color-scheme: dark;
   --font-ui: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  --canvas: #242320;
-  --surface: #2d2b28;
-  --surface-hover: #383530;
-  --sidebar: #282623;
-  --text: #e9e3d9;
-  --muted: #aaa297;
-  --nav-text: #c5beb3;
-  --nav-group: #958e83;
-  --line: #4c4740;
-  --control-border: #7c7367;
-  --accent: #d9a083;
-  --accent-hover: #e9b79d;
-  --accent-soft: #47362e;
-  --accent-border: #906a56;
-  --on-accent: #26221f;
-  --focus: #dfad8e;
-  --header-background: #282623;
-  --header-text: #d8cdbf;
-  --header-border: #4c4740;
-  --header-badge-border: #706355;
-  --metric-color: #e0b092;
-  --metric-border: #8e6752;
-  --metric-font-size: clamp(18px, 12cqi, 30px);
+  --canvas: #262624;
+  --surface: #30302e;
+  --surface-hover: #3a3a37;
+  --sidebar: #1f1e1c;
+  --text: #e8e4dc;
+  --muted: #a19f99;
+  --nav-text: #c9c5bd;
+  --nav-group: #8f8c86;
+  --line: #3c3a36;
+  --control-border: #6b6862;
+  --accent: #d97757;
+  --accent-hover: #e58b6d;
+  --accent-soft: #3d2b24;
+  --accent-border: #8a5440;
+  --on-accent: #1f1e1c;
+  --focus: #e58b6d;
+  --header-background: #1f1e1c;
+  --header-text: #d9d5cd;
+  --header-border: #3c3a36;
+  --header-badge-border: #5a5751;
+  --metric-color: #e8e4dc;
+  --metric-border: #3c3a36;
+  --metric-font-size: clamp(16px, 11cqi, 24px);
   --panel-shadow: none;
   --header-blur: none;
-  --table-heading: #38342e;
-  --row-hover: #36312c;
+  --table-heading: #2a2a28;
+  --row-hover: #363633;
   --danger: #f0aaa4;
   --danger-border: #80514c;
   --danger-soft: #442e2a;
-  --chart-1: #d9a083;
-  --chart-2: #91b580;
-  --chart-3: #82a9cf;
-  --chart-4: #d0b464;
-  --chart-5: #b294c6;
-  --chart-6: #65b3ac;
-  --chart-grid: #4c4740;
+  --chart-1: #d4704f;
+  --chart-2: #5b8fd6;
+  --chart-3: #5f9a4c;
+  --chart-4: #a77bd0;
+  --chart-5: #b8891f;
+  --chart-6: #1a9a8e;
+  --chart-grid-style: dashed;
+  --chart-bar-radius: 0;
+  --chart-focus: off;
+  --chart-muted: #c4c4c4;
+  --chart-bar-style: blocks;
+  --chart-grid: #3c3a36;
 }
+
+/* Signature: a command line at the top that holds the filters as flags, ⏺ panel titles,
+   block-character sparklines and bars, dashed rules and a status line. */
+@media (min-width: 721px) {
+  :root[data-theme="claude-code"] .topbar { display: none; }
+}
+:root[data-theme="claude-code"] .dashboard-body { display: flex; flex-direction: column; }
+:root[data-theme="claude-code"] .dashboard-body > .filters {
+  order: -1; margin: calc(-1 * var(--pad-y)) calc(-1 * var(--pad-x)) 20px; padding: 10px var(--pad-x); gap: 4px 10px;
+  background: #1f1e1c; border: 0; border-bottom: 1px solid #3c3a36; border-radius: 0; box-shadow: none;
+  font-size: 12px;
+}
+:root[data-theme="claude-code"] .filter-prompt { display: inline; color: #e8e4dc; white-space: nowrap; }
+:root[data-theme="claude-code"] .prompt-caret { color: #d97757; }
+:root[data-theme="claude-code"] .filter-chip { height: auto; padding: 2px 4px; border: 0; background: transparent; font-size: 12px; gap: 6px; }
+:root[data-theme="claude-code"] .filter-chip::after { content: none; }
+:root[data-theme="claude-code"] .filter-chip:hover { background: #30302e; }
+:root[data-theme="claude-code"] .chip-flag { display: inline; color: #a19f99; }
+:root[data-theme="claude-code"] .chip-label { display: none; }
+:root[data-theme="claude-code"] .chip-value { color: #e8e4dc; font-weight: 400; }
+:root[data-theme="claude-code"] .filter-chip.is-set .chip-value { color: #d97757; }
+:root[data-theme="claude-code"] .more-filters { height: auto; padding: 2px 4px; border: 0; font-size: 12px; color: #a19f99; }
+:root[data-theme="claude-code"] .filter-actions { align-items: center; }
+:root[data-theme="claude-code"] .filter-actions::before { content: ""; width: 7px; height: 14px; background: #d97757; animation: claude-cursor 1.1s steps(1) infinite; }
+@keyframes claude-cursor { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { :root[data-theme="claude-code"] .filter-actions::before { animation: none; } }
+:root[data-theme="claude-code"] .filter-actions .button { min-height: 26px; padding: 3px 10px; font-size: 12px; }
+:root[data-theme="claude-code"] .block { border-radius: 8px; border-color: #4a4743; }
+:root[data-theme="claude-code"] .block-heading h2::before { content: "⏺ "; color: #d97757; }
+:root[data-theme="claude-code"] .block-heading h2, :root[data-theme="claude-code"] .metric-block h2 { text-transform: lowercase; }
+:root[data-theme="claude-code"] .metric-block { border-top: 1px solid #4a4743; }
+:root[data-theme="claude-code"] .metric-sparkline { display: none; }
+:root[data-theme="claude-code"] .metric-blocks { display: block; margin-top: 8px; color: #d97757; letter-spacing: 1px; font-size: 13px; white-space: nowrap; overflow: hidden; }
+:root[data-theme="claude-code"] td, :root[data-theme="claude-code"] th { border-bottom: 1px dashed #4a4743; }
+:root[data-theme="claude-code"] th { background: transparent; }
+:root[data-theme="claude-code"] .status-line { display: flex; flex-wrap: wrap; gap: 4px 16px; position: sticky; bottom: 0; z-index: 3; margin: 0; padding: 7px var(--pad-x); background: #1f1e1c; border-top: 1px solid #3c3a36; font-size: 11px; color: #a19f99; }
+:root[data-theme="claude-code"] .status-ok { color: #6fbf73; }
+:root[data-theme="claude-code"] .page-heading h1 { text-transform: lowercase; }

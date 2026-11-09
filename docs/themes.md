@@ -35,7 +35,7 @@ No remote fonts or theme resources are required.
 
 | Name          | Appearance                                                                              | Default corners |
 | ------------- | --------------------------------------------------------------------------------------- | --------------- |
-| `excel`       | White surfaces, green header and metrics, moderately saturated categorical chart colors | `none`          |
+| `excel`       | White surfaces, green header, cell-like metric cards, formula bar and sheet tabs        | `none`          |
 | `chromeos`    | Pale blue canvas, rounded surfaces, blue accents and soft shadows                       | `rounded`       |
 | `chatgpt`     | White and neutral gray surfaces, charcoal controls, muted sage metrics                  | `rounded-lg`    |
 | `claude-code` | Dark warm surfaces, monospace text, terracotta accents                                  | `rounded-sm`    |
@@ -114,9 +114,40 @@ An explicit `chart.series[].color` takes precedence. Use that override when a
 series must keep a semantic color across charts or themes; verify its contrast
 on both light and dark surfaces if both are used.
 
-Excel's metric values use `#217346`. Its chart palette uses moderately saturated green, blue,
-gold, teal, purple and orange tones; see [the exact colors](contracts.md#chart-palette).
-Chart text, axes, grid, legend and tooltips also follow the theme.
+All eight palettes pass the lightness, saturation, contrast and colour-vision checks
+in `tests/palettes.test.ts`; see [the exact colors and thresholds](contracts.md#chart-palette).
+Chart text, axes, grid, legend and tooltips also follow the theme, and two tokens
+shape the marks: `--chart-grid-style` (`solid` or `dashed`) and `--chart-bar-radius`
+(pixels).
+
+## Signatures
+
+Every theme adds details that make it recognizable at a glance. They only change
+presentation; data, filters and exports are the same in every theme.
+
+| Theme | Signature |
+| --- | --- |
+| `excel` | The top bar shows the dashboard and project. A formula bar below it shows the applied filters as one expression. Metric cards look like cells with a column reference (B, C, …). Tables are gridded, with column letters, in-cell data bars in a green gradient and a status line with average, count and sum. The main dashboards appear as sheet tabs at the bottom. |
+| `power-bi` | Filters move to a pane on the right, one card per filter (on screens wider than 1150 px). Metric cards show the value above its label. Block tools appear on hover or focus. The main dashboards appear as page tabs with a yellow marker. |
+| `microstrategy` | The main dashboards appear as chapters in the top bar, the current one underlined in red. Data panels have a title strip in small capitals. Changes and set filters use red chips. |
+| `cognos` | Tiles sit on grey layers without borders or shadows. Filters keep labelled, underlined fields. Metric values use light numerals, changes appear as coloured tags, the active navigation item has a blue indicator and the primary button an arrow. |
+| `chromeos` | Tonal surfaces without borders or shadows, pill navigation, filter chips that show a check when set, and the first metric in a tonal container. |
+| `macos` | A translucent sidebar with a filled blue selection, the title in the toolbar, and filters and actions in one toolbar row without a box. |
+| `chatgpt` | No boxes: sections are separated by space and hairlines in a narrow centred column. Metrics are loose numbers between hairlines, controls are pills, and charts are in focus: the main series in green, the rest in grey. |
+| `claude-code` | A command line at the top holds the filters as flags (`❯ dashy overview --period 2020`). Panel titles start with ⏺, sparklines and bars are drawn in blocks, tables use dashed rules and a status line shows the request count and load time. |
+
+## Shared presentation
+
+- **Filters** are chips such as "Period: 2020". A chip opens its control in a popover;
+  Apply applies every change at once. The first three are shown, the rest behind
+  "+ N filters", which also counts how many of them are set.
+- **Updated** time sits in the top bar on wide screens and in the page on phones.
+- **Metric cards** never wrap values: from one million they use short numbers
+  (see [metrics](contracts.md#metrics)). Sparklines have an area and a dot on the latest value.
+- **Charts** follow the [presentation defaults](contracts.md#chart-types). Horizontal
+  single-series bars name each bar above it and write its value at the end.
+- **Page tabs, chapters and sheet tabs** list the dashboards that open on their own;
+  detail dashboards with required parameters are reached by drillthrough.
 
 ## Implementation
 

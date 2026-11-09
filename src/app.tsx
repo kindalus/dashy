@@ -19,11 +19,12 @@ import type {
   QueryResult,
   PageShell,
   Row,
+  Scalar,
   TableSort,
 } from "../core/types";
 import { Chart } from "./chart";
-import { formatValue } from "./format";
-import { Workspace } from "./workspace";
+import { formatMetric, formatValue } from "./format";
+import { Workspace, type PageStatus } from "./workspace";
 import { PageContent } from "./page-content";
 import type { Component } from "solid-js";
 import type { PageProps } from "./extension-api";
@@ -45,7 +46,8 @@ import { describeFilters, filterValue } from "../core/filters";
 import { installPrint, printing } from "./print";
 import type { ChartSnapshot } from "./chart";
 import type { ThemeName } from "../core/theme";
-import { applyTheme, ThemeContext } from "./theme-picker";
+import { applyTheme, ThemeContext, useActiveTheme } from "./theme-picker";
+import { FilterBar } from "./filter-bar";
 
 export interface AppProps {
   catalog: Catalog;
@@ -58,14 +60,15 @@ export function App(props: AppProps & { Page?: Component<PageProps> }) {
   const selected = props.page ? `/pages/${props.page.id}` : props.dashboard ? `/dashboards/${props.dashboard.id}` : undefined;
   const [theme, setTheme] = createSignal<ThemeName>(untrack(() => props.theme ?? props.catalog.theme.name));
   const changeTheme = (name: ThemeName) => setTheme(applyTheme(props.catalog.theme, name));
+  const [status, setStatus] = createSignal<PageStatus>({ text: "" });
   return <ThemeContext value={theme}>
     <Workspace catalog={props.catalog} selected={selected}
       label={props.page?.definition.label ?? props.dashboard?.definition.label}
       kind={props.page ? "Pages" : "Dashboards"}
-      theme={theme()} onThemeChange={changeTheme}>
+      theme={theme()} onThemeChange={changeTheme} status={status()}>
       {props.page && props.Page
         ? <PageContent page={props.page} catalog={props.catalog} component={props.Page} />
-        : <DashboardContent {...props} />}
+        : <DashboardContent {...props} onStatus={setStatus} />}
     </Workspace>
   </ThemeContext>;
 }
@@ -95,7 +98,7 @@ export interface BlockInteraction {
   filename: () => string;
 }
 
-function DashboardContent(props: AppProps) {
+function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) => void }) {
   const [shell, setShell] = createSignal(untrack(() => props.dashboard));
   let loader = untrack(() => props.dashboard) ? new DashboardLoader(untrack(() => props.dashboard)!, (state) => setLoads(state)) : undefined;
   const [loads, setLoads] = createSignal<DashboardLoads>(loader?.state || {});
@@ -134,6 +137,23 @@ function DashboardContent(props: AppProps) {
     if (!updated) return "No blocks configured";
     return `Updated ${new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }).format(new Date(updated))} UTC`;
   });
+  // Report the status and how long the last load took, for the top bar and the terminal status line.
+  let loadStarted = 0;
+  const [elapsed, setElapsed] = createSignal<number>();
+  createEffect(
+    () => Object.values(loads()).every((group) => !group.loading) && Object.keys(loads()).length > 0,
+    (done) => {
+      if (done && loadStarted) {
+        setElapsed(Math.round(performance.now() - loadStarted));
+        loadStarted = 0;
+      }
+    },
+  );
+  createEffect(
+    () => ({ text: updateStatus(), requests: shell()?.requests.length ?? 0, ms: elapsed() }),
+    // No return value: Solid treats an effect's return as its cleanup.
+    (status) => { props.onStatus?.(status); },
+  );
   const search = (
     current: DashboardShell, params: Params, crossFilters: readonly CrossFilterOrigin[],
     drilldowns: Record<string, readonly string[]> = current.drilldowns,
@@ -169,6 +189,7 @@ function DashboardContent(props: AppProps) {
       setDraft({ ...next.params });
       setLoads(loader.state);
       if (refresh) query.set("refresh", "true");
+      loadStarted = performance.now();
       if (!next.missing.length) void loader.load(query);
     } catch (error) {
       if (run !== generation) return;
@@ -185,6 +206,7 @@ function DashboardContent(props: AppProps) {
     if (current && !current.missing.length) {
       const query = search(current, current.params, current.crossFilters);
       history.replaceState(null, "", `${location.pathname}${query.size ? `?${query}` : ""}`);
+      loadStarted = performance.now();
       void loader!.load(query);
     }
     return () => loader?.dispose();
@@ -288,6 +310,20 @@ function DashboardContent(props: AppProps) {
     },
     filename: () => `${shell()?.id ?? "dashboard"}-${blockId}`,
   });
+  const activeTheme = useActiveTheme();
+  const formula = () => {
+    const current = shell();
+    if (!current) return "";
+    const parts = (current.definition.params ?? [])
+      .map((name) => `${props.catalog.params[name]!.label} = ${filterValue(current.params[name], props.catalog.params[name]!)}`);
+    return `=FILTER(${parts.join("; ")})`;
+  };
+  // Metric cards in order take columns B, C, …, as if column A held row labels.
+  const cellRef = (id: string) => {
+    const metrics = (definition()?.blocks ?? []).filter((block) => block.type === "metric");
+    const index = metrics.findIndex((block) => block.id === id);
+    return index < 0 ? undefined : columnLetter(index + 1);
+  };
   // Printed under the title: every filter, noting the blocks a cross-filter does not apply to.
   const filterSummary = () => {
     const current = shell();
@@ -299,6 +335,15 @@ function DashboardContent(props: AppProps) {
   };
   return (
     <>
+          {/* Excel's formula bar: the applied filters as one expression. Decorative; other themes hide it. */}
+          <Show when={shell()}>
+            <div class="formula-bar" aria-hidden="true">
+              <span class="formula-name">{definition()?.label}</span>
+              <span class="formula-fx">fx</span>
+              <span class="formula-text">{formula()}</span>
+            </div>
+          </Show>
+          <div class="dashboard-body">
           <Show when={back()}>
             {(link) => <a class="back-link" href={link().href}><span aria-hidden="true">←</span> {link().label}</a>}
           </Show>
@@ -311,17 +356,22 @@ function DashboardContent(props: AppProps) {
                   : "Add a dashboard to your project configuration to get started."}
               </p>
             </div>
-            <Show when={shell() && !shell()!.missing.length}>
-              <div class="page-actions">
-                <button class="button secondary" onClick={() => print()}>Print / PDF</button>
-                <button
-                  class="button secondary"
-                  onClick={() => void apply(shell()!.params, shell()!.crossFilters, true)}
-                >
-                  Refresh
-                </button>
+            <div class="page-side">
+              <div class="update-status" role="status" aria-live="polite">
+                {updateStatus()}
               </div>
-            </Show>
+              <Show when={shell() && !shell()!.missing.length}>
+                <div class="page-actions">
+                  <button class="button secondary" onClick={() => print()}>Print / PDF</button>
+                  <button
+                    class="button secondary"
+                    onClick={() => void apply(shell()!.params, shell()!.crossFilters, true)}
+                  >
+                    Refresh
+                  </button>
+                </div>
+              </Show>
+            </div>
           </div>
           <Show when={filterSummary()}>
             <p class="print-summary">{filterSummary()}</p>
@@ -332,18 +382,18 @@ function DashboardContent(props: AppProps) {
               onSubmit={(event) => { event.preventDefault(); void apply(draft(), [], false, {}); }}
               autocomplete="off"
             >
-              <For each={definition()?.params || []}>
-                {(name) => (
-                  <ParameterControl
-                    name={name}
-                    definition={props.catalog.params[name]!}
-                    value={draft()[name]}
-                    onChange={(value) => setDraft({ ...draft(), [name]: value ?? null })}
-                    timezone={props.catalog.timezone}
-                    context={draft}
-                  />
-                )}
-              </For>
+              <FilterBar
+                names={definition()?.params ?? []}
+                definitions={props.catalog.params}
+                draft={draft()}
+                onChange={(name, value) => setDraft({ ...draft(), [name]: value ?? null })}
+                timezone={props.catalog.timezone}
+                locale={locale()}
+                context={draft}
+                fields={activeTheme() === "cognos"}
+                visible={activeTheme() === "cognos" ? 4 : 3}
+                prompt={`dashy ${shell()?.id ?? ""}`}
+              />
               <div class="filter-actions">
                 <button class="button primary" type="submit">Apply filters</button>
                 <button class="button text" type="button" onClick={() => { location.href = location.pathname; }}>Reset</button>
@@ -368,9 +418,6 @@ function DashboardContent(props: AppProps) {
               Select {shell()!.missing.map((name) => props.catalog.params[name]?.label ?? name).join(", ")} to load this dashboard.
             </div>
           </Show>
-          <div class="update-status" role="status" aria-live="polite">
-            {updateStatus()}
-          </div>
           <noscript>Enable JavaScript to load dashboard data.</noscript>
           <Show when={shell() && !shell()!.missing.length}>
             <section
@@ -382,6 +429,7 @@ function DashboardContent(props: AppProps) {
                   <DashboardCard
                     block={blocks().get(layout().id)}
                     layout={layout()}
+                    cellRef={cellRef(layout().id)}
                     label={shell()!.labels[layout().id]!}
                     loading={stateFor(layout().id)?.loading ?? false}
                     loadError={stateFor(layout().id)?.error || ""}
@@ -394,6 +442,7 @@ function DashboardContent(props: AppProps) {
               </For>
             </section>
           </Show>
+          </div>
           <Show when={menu()}>
             {(state) => <ActionMenu state={state()} close={() => setMenu(undefined)} run={(action) => run(state().blockId, action)} />}
           </Show>
@@ -442,6 +491,8 @@ function ActionMenu(props: { state: MenuState; close: () => void; run: (action: 
 function DashboardCard(props: {
   block?: BlockResult;
   layout: DashboardBlock;
+  /** Spreadsheet column of a metric card (B, C, …), shown by the Excel theme. */
+  cellRef?: string;
   label: string;
   loading: boolean;
   loadError: string;
@@ -486,21 +537,24 @@ function DashboardCard(props: {
         <Show when={metric()}>
           {(block) => (
             <>
-              <h2>{block().definition.label}</h2>
-              <div class="metric-value">
-                {formatValue(
-                  block().value,
-                  block().definition.format,
-                  props.locale,
-                )}
-              </div>
+              <h2><Show when={props.cellRef}><span class="cell-ref" aria-hidden="true">{props.cellRef} · </span></Show>{block().definition.label}</h2>
+              {(() => {
+                // Compact from one million so values never wrap; the exact value stays in the tooltip.
+                const shown = () => formatMetric(block().value, block().definition.format, props.locale);
+                return (
+                  <div class="metric-value" title={shown().full}>
+                    <span aria-hidden={shown().text !== shown().full ? "true" : undefined}>{shown().text}</span>
+                    <Show when={shown().text !== shown().full}><span class="visually-hidden">{shown().full}</span></Show>
+                  </div>
+                );
+              })()}
               <Show when={compareMetric(block().definition, block().value, block().compare, props.locale)}>
                 {(change) => (
                   <p class={`metric-compare tone-${change().tone}`}>
                     <span class="metric-arrow" aria-hidden="true">
                       {change().direction === "up" ? "▲" : change().direction === "down" ? "▼" : "▬"}
                     </span>
-                    <span aria-hidden="true">{change().change} {change().label}</span>
+                    <span aria-hidden="true"><span class="metric-change">{change().change}</span> {change().label}</span>
                     <span class="visually-hidden">{change().description}</span>
                   </p>
                 )}
@@ -521,8 +575,14 @@ function DashboardCard(props: {
                 {(paths) => (
                   <Show when={paths().length}>
                     <svg class="metric-sparkline" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true">
+                      {/* An area under each run, the line, and a dot on the latest value. */}
+                      <For each={paths()}>{(points) => <polygon class="spark-area" points={sparkArea(points, 28)} />}</For>
                       <For each={paths()}>{(points) => <polyline points={points} />}</For>
+                      <Show when={lastPoint(paths())}>
+                        {(end) => <circle class="spark-end" cx={end()[0]} cy={end()[1]} r="2.4" />}
+                      </Show>
                     </svg>
+                    <span class="metric-blocks" aria-hidden="true">{blockSparkline(block().sparkline ?? [])}</span>
                   </Show>
                 )}
               </Show>
@@ -678,6 +738,30 @@ function Dataset(props: {
     props.definition.topN ? "Top N" : "",
   ].filter(Boolean).join(" and ");
   const interactive = createMemo(() => new Set(props.interaction.columns(props.definition).map((c) => c.key)));
+  // In-cell bars scale to each column's largest absolute value among the rows shown.
+  const barMax = createMemo(() => {
+    const max: Record<string, number> = {};
+    for (const column of props.definition.columns.filter((c) => c.bar))
+      max[column.key] = Math.max(0, ...ranked().rows.filter((row) => !isOtherRow(row))
+        .map((row) => Math.abs(Number(row[column.key])) || 0));
+    return max;
+  });
+  const barWidth = (column: DatasetColumn, value: Scalar | undefined) => {
+    const max = barMax()[column.key];
+    const number = Math.abs(Number(value));
+    return max && Number.isFinite(number) ? `${Math.min(100, (number / max) * 100).toFixed(1)}%` : "0%";
+  };
+  // Excel's status bar: average, count and sum of the first summed column, over every row.
+  const statusColumn = () => props.definition.columns.find((c) => c.bar && c.aggregate === "sum")
+    ?? props.definition.columns.find((c) => c.aggregate === "sum");
+  const status = createMemo(() => {
+    const column = statusColumn();
+    if (!column || props.result.truncated) return undefined;
+    const values = props.result.rows.map((row) => Number(row[column.key])).filter(Number.isFinite);
+    if (!values.length) return undefined;
+    const sum = values.reduce((total, value) => total + value, 0);
+    return { label: column.label, sum, average: sum / values.length, count: values.length, format: column.format };
+  });
   // The synthetic "Other" row is never a selection, even when a real value shares its label.
   const selection = createMemo(() => {
     const selected = props.interaction.selection(props.definition);
@@ -771,6 +855,10 @@ function Dataset(props: {
               >
                 <table>
                   <thead>
+                    {/* Spreadsheet column letters (Excel); other themes hide the row. */}
+                    <tr class="col-letters" aria-hidden="true">
+                      <For each={props.definition.columns}>{(_, index) => <th>{columnLetter(index())}</th>}</For>
+                    </tr>
                     <tr>
                       <For each={props.definition.columns}>
                         {(column) => (
@@ -815,7 +903,10 @@ function Dataset(props: {
                               const clickable = () => interactive().has(column.key) && !isOtherRow(row)
                                 && row[source] !== null && row[source] !== undefined;
                               return (
-                                <td>
+                                <td class={column.bar ? "has-bar" : undefined}>
+                                  <Show when={column.bar && !isOtherRow(row)}>
+                                    <span class="data-bar" aria-hidden="true" style={{ width: barWidth(column, row[column.key]) }} />
+                                  </Show>
                                   <Show when={clickable()} fallback={text()}>
                                     <button type="button" class="cell-action"
                                       onClick={(event) => props.interaction.select(props.definition, column, row, event)}>
@@ -848,6 +939,16 @@ function Dataset(props: {
                   </Show>
                 </table>
               </div>
+              <Show when={status()}>
+                {(s) => (
+                  <p class="table-sum">
+                    <span>{s().label}</span>
+                    <span>Average: {formatValue(s().average, { ...s().format, compact: true }, props.locale)}</span>
+                    <span>Count: {s().count}</span>
+                    <span>Sum: {formatValue(s().sum, { ...s().format, compact: true }, props.locale)}</span>
+                  </p>
+                )}
+              </Show>
               <div class="table-footer">
                 <span>
                   {ranked().hidden ? `${props.definition.topN?.order === "bottom" ? "Bottom" : "Top"} ${ranked().rows.filter((row) => !isOtherRow(row)).length} of ${props.result.rows.length} rows` : `${props.result.rows.length} rows`}
@@ -930,4 +1031,30 @@ function DrillPath(props: { definition: DatasetDefinition; path: readonly string
       </nav>
     </Show>
   );
+}
+
+/** Area polygon under a sparkline run, closed on the baseline. */
+function sparkArea(points: string, height: number): string {
+  const pairs = points.split(" ");
+  const first = pairs[0]!.split(",")[0];
+  const last = pairs.at(-1)!.split(",")[0];
+  return `${first},${height} ${points} ${last},${height}`;
+}
+function lastPoint(paths: string[]): [string, string] | undefined {
+  const last = paths.at(-1)?.split(" ").at(-1)?.split(",");
+  return last && last.length === 2 ? [last[0]!, last[1]!] : undefined;
+}
+const BLOCKS = "▁▂▃▄▅▆▇█";
+/** A sparkline in block characters, for monospace themes. Gaps become spaces. */
+function blockSparkline(values: readonly (number | null)[]): string {
+  const finite = values.filter((v): v is number => v !== null && Number.isFinite(v));
+  if (finite.length < 2) return "";
+  const min = Math.min(...finite), span = Math.max(...finite) - min || 1;
+  return values.map((v) => v === null || !Number.isFinite(v) ? " " : BLOCKS[Math.round(((v - min) / span) * 7)]).join("");
+}
+/** A, B, … Z, AA, AB … */
+function columnLetter(index: number): string {
+  let n = index + 1, text = "";
+  while (n > 0) { const r = (n - 1) % 26; text = String.fromCharCode(65 + r) + text; n = Math.floor((n - 1) / 26); }
+  return text;
 }

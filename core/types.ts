@@ -137,6 +137,11 @@ export interface Format {
   decimals?: number;
   /** For dates: show the period, e.g. 2024, Q1 2024, Jan 2024. */
   grain?: DateGrain;
+  /**
+   * Short form such as US$ 9,29 mi, with three significant digits. Metric cards
+   * use it by default from one million; false keeps the full value there too.
+   */
+  compact?: boolean;
 }
 /** Declares that a column holds values of a project parameter. Never a navigation target. */
 export type ColumnParam = string | { name: string; from: string };
@@ -153,6 +158,8 @@ export interface DatasetColumn {
   format?: Format;
   param?: ColumnParam;
   aggregate?: ColumnAggregate;
+  /** Draws an in-cell bar proportional to the column's largest value. */
+  bar?: boolean;
 }
 export interface TableSort {
   column: string;

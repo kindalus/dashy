@@ -161,3 +161,41 @@ describe("chart options", () => {
     expect(chartKeyColumns({ type: "gauge", value: "v" })).toEqual([]);
   });
 });
+
+describe("chart and metric presentation", () => {
+  const months = Array.from({ length: 24 }, (_, i) => ({ month: `2020-${String(i + 1).padStart(2, "0")}`, a: 100 + i, b: 50 + i }));
+  const series = (keys: string[], as: "line" | "area" | "bar" = "line", stack?: string) =>
+    keys.map((key) => ({ key, label: key.toUpperCase(), as, ...(stack ? { stack } : {}) }));
+  const make = (chart: ChartDefinition, rows = months, custom: Partial<ChartTheme> = {}) =>
+    buildChart(dataset(chart), { columns: Object.keys(rows[0]!), rows, truncated: false, durationMs: 1 }, "en", { ...theme, ...custom });
+  type Option = { series: Record<string, unknown>[]; grid: { right: number }; legend: Record<string, unknown>; yAxis: { splitLine: { lineStyle: { type: string } } } };
+
+  test("long series hide point markers; a single line labels its last value", () => {
+    const single = make({ type: "cartesian", x: "month", series: series(["a"], "area") }).option as Option;
+    expect(single.series[0]!.showSymbol).toBe(false);
+    expect((single.series[0]!.endLabel as { show: boolean }).show).toBe(true);
+    expect(single.grid.right).toBe(76);
+    expect(((single.series[0]!.areaStyle as { color: { type: string } }).color).type).toBe("linear");
+    const two = make({ type: "cartesian", x: "month", series: series(["a", "b"]) }).option as Option;
+    expect(two.series.every((s) => s.endLabel === undefined)).toBe(true);
+    const short = make({ type: "cartesian", x: "month", series: series(["a"]) }, months.slice(0, 6)).option as Option;
+    expect(short.series[0]!.showSymbol).toBe(true);
+  });
+  test("bars use the theme radius, stacks a surface hairline; legend sits top left", () => {
+    const bars = make({ type: "cartesian", x: "month", series: series(["a", "b"], "bar") }, months, { barRadius: 4, gridStyle: "dashed" }).option as Option;
+    expect(bars.series[0]!.itemStyle).toEqual({ borderRadius: [4, 4, 0, 0] });
+    expect(bars.legend).toMatchObject({ left: 0, top: 0, icon: "roundRect" });
+    expect(bars.yAxis.splitLine.lineStyle.type).toBe("dashed");
+    const stacked = make({ type: "cartesian", x: "month", series: series(["a", "b"], "bar", "s") }).option as Option;
+    expect(stacked.series[0]!.itemStyle).toEqual({ borderColor: theme.surface, borderWidth: 1 });
+  });
+  test("metric values shorten from one million and keep the exact value", async () => {
+    const { formatMetric } = await import("../src/format");
+    const usd = { style: "currency" as const, currency: "USD", decimals: 0 };
+    const big = formatMetric(9294632, usd, "en");
+    expect(big).toEqual({ text: "$9.29M", full: "$9,294,632" });
+    expect(formatMetric(2517, { decimals: 0 }, "en")).toEqual({ text: "2,517", full: "2,517" });
+    expect(formatMetric(9294632, { ...usd, compact: false }, "en").text).toBe("$9,294,632");
+    expect(formatMetric(0.586, { style: "percent", decimals: 1 }, "en").text).toBe("58.6%");
+  });
+});

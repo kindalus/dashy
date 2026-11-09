@@ -174,6 +174,8 @@ export function defineProject<const T extends ProjectDefinition>(
       }
     };
     annotations(dataset.columns);
+    for (const column of dataset.columns)
+      assert(column.bar === undefined || typeof column.bar === "boolean", `${name} column ${column.key} bar must be true or false`);
     if (dataset.drilldown !== undefined) {
       const drillError = drilldownError(dataset, project, {
         chart: (definition) => definition.chart ? validateChart(definition.chart, definition.columns.map((c) => c.key)) : undefined,

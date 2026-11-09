@@ -1,7 +1,7 @@
 :root[data-theme="chromeos"] {
   color-scheme: light;
   --font-ui: "Google Sans", "Roboto", "Segoe UI", sans-serif;
-  --canvas: #edf2fa;
+  --canvas: #eef2fa;
   --surface: #ffffff;
   --surface-hover: #e8eef9;
   --sidebar: #f7f9fe;
@@ -31,11 +31,34 @@
   --danger: #a4262c;
   --danger-border: #e3b3b6;
   --danger-soft: #fdf3f4;
-  --chart-1: #527fc1;
-  --chart-2: #3f916d;
-  --chart-3: #b28a32;
-  --chart-4: #8c69b5;
-  --chart-5: #c16d79;
-  --chart-6: #338c9e;
+  --chart-1: #1a73e8;
+  --chart-2: #e8710a;
+  --chart-3: #9334e6;
+  --chart-4: #188038;
+  --chart-5: #d01884;
+  --chart-6: #b8860b;
+  --chart-grid-style: dashed;
+  --chart-bar-radius: 6;
+  --chart-focus: off;
+  --chart-muted: #c4c4c4;
+  --chart-bar-style: solid;
   --chart-grid: #e1e8f3;
 }
+
+/* Signature: tonal surfaces without borders or shadows, pill navigation, filter chips with a
+   check, and the first metric in a tonal container. */
+:root[data-theme="chromeos"] .topbar { background: transparent; border-bottom: 0; }
+:root[data-theme="chromeos"] .sidebar { border-right: 0; }
+:root[data-theme="chromeos"] .nav-item { border-radius: 999px; }
+:root[data-theme="chromeos"] .nav-item[aria-current="page"] { background: #d6e3ff; color: #0e2e68; box-shadow: none; }
+:root[data-theme="chromeos"] .block, :root[data-theme="chromeos"] .filters { border: 0; box-shadow: none; }
+:root[data-theme="chromeos"] .filter-chip { border-radius: 8px; }
+:root[data-theme="chromeos"] .filter-chip.is-set { background: #d6e3ff; border-color: #d6e3ff; color: #0e2e68; }
+:root[data-theme="chromeos"] .filter-chip.is-set .chip-label { color: #0e2e68; }
+:root[data-theme="chromeos"] .filter-chip.is-set::before { content: "✓"; font-weight: 700; }
+:root[data-theme="chromeos"] .dashboard-grid > .metric-block:first-child { background: #d6e3ff; }
+:root[data-theme="chromeos"] .dashboard-grid > .metric-block:first-child h2,
+:root[data-theme="chromeos"] .dashboard-grid > .metric-block:first-child .metric-value,
+:root[data-theme="chromeos"] .dashboard-grid > .metric-block:first-child .metric-compare { color: #0e2e68; }
+:root[data-theme="chromeos"] th { background: transparent; border-bottom-color: #c7d2e6; }
+:root[data-theme="chromeos"] .dashboard-grid > .metric-block:first-child .metric-change { color: #0e2e68; }

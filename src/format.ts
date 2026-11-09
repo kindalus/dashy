@@ -46,6 +46,10 @@ export function formatValue(
         ? "percent"
         : "decimal";
   const currency = style === "currency" ? format.currency || "USD" : undefined;
+  if (format.compact && style !== "percent")
+    return cached(numberFormats, JSON.stringify([locale, style, currency, "compact"]), () =>
+      new Intl.NumberFormat(locale, { style, currency, notation: "compact", maximumSignificantDigits: 3 }),
+    ).format(number);
   const minimumFractionDigits = format.decimals ?? 0;
   const maximumFractionDigits = format.decimals ?? 2;
   const key = JSON.stringify([
@@ -81,4 +85,15 @@ export function formatPeriod(value: Scalar, grain: DateGrain, locale = "pt"): st
     ? { month: "short", year: "numeric", timeZone: "UTC" }
     : { dateStyle: "medium", timeZone: "UTC" };
   return cached(dateFormats, `${locale}:${grain}`, () => new Intl.DateTimeFormat(locale, options)).format(date);
+}
+
+/**
+ * A metric card's value: compact from one million unless the format says
+ * otherwise, so long values never wrap. `full` is always the exact value.
+ */
+export function formatMetric(value: Scalar | undefined, format: Format = {}, locale = "pt"): { text: string; full: string } {
+  const full = formatValue(value, format, locale);
+  const number = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : Number.NaN;
+  const compact = format.compact ?? (Number.isFinite(number) && Math.abs(number) >= 1_000_000);
+  return { text: compact ? formatValue(value, { ...format, compact: true }, locale) : full, full };
 }

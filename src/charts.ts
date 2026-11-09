@@ -27,6 +27,7 @@ const loaders: Record<ChartModule, () => Promise<unknown>> = {
   boxplot: () => import("echarts/lib/chart/boxplot/install.js").then((m) => m.install),
   visualMap: () => import("echarts/lib/component/visualMap/install.js").then((m) => m.install),
   markLine: () => import("echarts/lib/component/marker/installMarkLine.js").then((m) => m.install),
+  pictorialBar: () => import("echarts/lib/chart/bar/installPictorialBar.js").then((m) => m.install),
 };
 const loaded = new Map<ChartModule, Promise<void>>();
 function ensure(modules: ChartModule[]): Promise<void> {
@@ -57,6 +58,11 @@ function readChartTheme(element: HTMLElement): ChartTheme {
     danger: token("--danger"),
     warning: token("--warning"),
     success: token("--success"),
+    gridStyle: token("--chart-grid-style") === "dashed" ? "dashed" : "solid",
+    barRadius: Number.parseFloat(token("--chart-bar-radius")) || 0,
+    focus: token("--chart-focus") === "on",
+    chartMuted: token("--chart-muted") || undefined,
+    barStyle: token("--chart-bar-style") === "blocks" ? "blocks" : "solid",
   };
 }
 

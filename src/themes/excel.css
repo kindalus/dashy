@@ -22,7 +22,7 @@
   --header-text: #ffffff;
   --header-border: #185c37;
   --header-badge-border: #70a98a;
-  --metric-color: #217346;
+  --metric-color: #1f1f1f;
   --metric-border: #217346;
   --metric-font-size: clamp(18px, 12cqi, 36px);
   --panel-shadow: none;
@@ -32,11 +32,52 @@
   --danger: #a4262c;
   --danger-border: #e3b3b6;
   --danger-soft: #fdf3f4;
-  --chart-1: #39865b;
-  --chart-2: #4e79b7;
-  --chart-3: #b58a35;
-  --chart-4: #3d8f9b;
-  --chart-5: #8c6bb1;
-  --chart-6: #c87945;
+  --chart-1: #1f7a4d;
+  --chart-2: #2f6fd6;
+  --chart-3: #d4680a;
+  --chart-4: #c43d79;
+  --chart-5: #a07800;
+  --chart-6: #7f56cf;
+  --chart-grid-style: solid;
+  --chart-bar-radius: 0;
+  --chart-focus: off;
+  --chart-muted: #c4c4c4;
+  --chart-bar-style: solid;
   --chart-grid: #e6e6e6;
 }
+
+/* Signature: formula bar, cell-like metrics with column letters, gridded tables with data bars,
+   a status bar and sheet tabs. */
+:root[data-theme="excel"] .breadcrumb { display: none; }
+:root[data-theme="excel"] .topbar-title { display: inline; font-weight: 700; }
+:root[data-theme="excel"] .topbar-product { display: inline; margin-right: auto; }
+:root[data-theme="excel"] .topbar-product::before { content: "· "; }
+:root[data-theme="excel"] .topbar-status { margin-left: 0; }
+:root[data-theme="excel"] .formula-bar {
+  display: flex; align-items: center; height: 30px; margin: calc(-1 * var(--pad-y)) calc(-1 * var(--pad-x)) 20px;
+  background: #ffffff; border-bottom: 1px solid #d4d4d4;
+  font: 12px Consolas, "Cascadia Mono", "Courier New", monospace; color: #3b3b3b; overflow: hidden;
+}
+:root[data-theme="excel"] .formula-name { min-width: 120px; padding: 0 10px 0 var(--pad-x); border-right: 1px solid #d4d4d4; font-family: "Segoe UI", Calibri, Arial, sans-serif; color: #242424; white-space: nowrap; }
+:root[data-theme="excel"] .formula-fx { padding: 0 12px; font: italic 700 13px Cambria, Georgia, serif; color: #217346; border-right: 1px solid #d4d4d4; }
+:root[data-theme="excel"] .formula-text { padding: 0 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-theme="excel"] .metric-block { border: 1px solid #d0d0d0; padding: 0; }
+:root[data-theme="excel"] .metric-block .block-content { padding-bottom: 14px; }
+:root[data-theme="excel"] .metric-block h2 { background: #f3f3f3; border-bottom: 1px solid #d0d0d0; padding: 6px 12px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #444444; }
+:root[data-theme="excel"] .cell-ref { display: inline; color: #8a8a8a; }
+:root[data-theme="excel"] .metric-block .block-content > :not(h2) { margin-left: 14px; margin-right: 14px; }
+:root[data-theme="excel"] .metric-block .metric-sparkline { width: calc(100% - 28px); }
+:root[data-theme="excel"] .metric-sparkline .spark-area { fill: #217346; }
+:root[data-theme="excel"] td, :root[data-theme="excel"] th { border-right: 1px solid #dadada; border-bottom-color: #dadada; }
+:root[data-theme="excel"] .col-letters { display: table-row; }
+:root[data-theme="excel"] .col-letters th { background: #e9e9e9; color: #666666; font-weight: 400; text-align: center; padding: 2px 6px; font-size: 10px; }
+:root[data-theme="excel"] tbody td:hover { outline: 2px solid #217346; outline-offset: -2px; }
+:root[data-theme="excel"] .data-bar { background: linear-gradient(90deg, #63be7b, #c6efce); opacity: 0.8; border-radius: 0; }
+:root[data-theme="excel"] .table-sum { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 4px 18px; margin: 0; padding: 6px 4px; border-top: 1px solid #e1e1e1; font-size: 12px; color: #3b3b3b; }
+:root[data-theme="excel"] .table-sum span:first-child { margin-right: auto; color: #616161; }
+:root[data-theme="excel"] .page-tabs { display: flex; position: sticky; bottom: 0; z-index: 3; margin: 0; padding: 0 var(--pad-x); background: #f3f3f3; border-top: 1px solid #c8c8c8; overflow-x: auto; }
+:root[data-theme="excel"] .page-tabs a { padding: 7px 18px; border-right: 1px solid #d6d6d6; font-size: 12px; color: #444444; white-space: nowrap; }
+:root[data-theme="excel"] .page-tabs a:hover { background: #ffffff; }
+:root[data-theme="excel"] .page-tabs a[aria-current="page"] { background: #ffffff; color: #217346; font-weight: 700; box-shadow: inset 0 -2px 0 #217346; }
+/* Bordered filter bar and cell-like metric cards read as one table when close; give them air. */
+:root[data-theme="excel"] .dashboard-body > .filters { margin-bottom: 28px; }
