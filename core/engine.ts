@@ -7,6 +7,7 @@ import { identifier, sql } from "./sql";
 import { todayIn } from "./dates";
 import { poolFor, type DatabasePool } from "./pool";
 import { cacheKey, QueryCache } from "./cache";
+import { numericValue } from "./tables";
 import type {
   BlockResult,
   Catalog,
@@ -18,6 +19,7 @@ import type {
   DashboardBlock,
   DashboardRequest,
   DatasetColumn,
+  DatasetDefinition,
   Params,
   PageShell,
   Principal,
@@ -302,6 +304,48 @@ export class DashyEngine {
       throw new Error(`Metric ${name} must return at most one row`);
     return result.rows[0]?.[definition.column] ?? null;
   }
+  /**
+   * A metric block's value plus its comparison, target and sparkline. The extra
+   * columns come from the same query row, so they cost nothing more; the
+   * sparkline is omitted when the principal cannot read its dataset.
+   */
+  private async metricBlock(
+    name: string,
+    principal: Principal | undefined,
+    execute: (query: string) => Promise<QueryResult>,
+    /** Executor for the sparkline, which also ignores the block's `unfiltered` parameters. */
+    sparklineExecute: (query: string) => Promise<QueryResult> = execute,
+    signal?: AbortSignal,
+  ): Promise<Extract<BlockResult, { type: "metric" }>> {
+    const definition = this.project.metrics[name]!;
+    const value = await this.metric(name, {}, principal, execute);
+    const block: Extract<BlockResult, { type: "metric" }> = { id: "", type: "metric", definition, value };
+    const extra = [definition.compare?.column, definition.target?.column].filter((column): column is string => Boolean(column));
+    if (extra.length) {
+      const result = await execute(definition.query);
+      for (const column of extra)
+        if (!result.columns.includes(column)) throw new Error(`Metric ${name} has no column ${column}`);
+      const row = result.rows[0];
+      if (definition.compare) block.compare = row?.[definition.compare.column] ?? null;
+      if (definition.target?.column) block.target = row?.[definition.target.column] ?? null;
+    }
+    const sparkline = definition.sparkline;
+    if (sparkline) {
+      const dataset = this.project.datasets[sparkline.dataset]!;
+      if (canRead(dataset.roles, principal) && canRead(this.project.queries[dataset.query]!.roles, principal)) {
+        // The sparkline is decorative: its failure must not hide a value that loaded.
+        try {
+          const result = await this.dataset(sparkline.dataset, {}, principal, sparklineExecute);
+          block.sparkline = result.rows.map((row) => numericValue(row[sparkline.value]));
+        } catch (error) {
+          // A cancelled request stops as a whole, without logging the sparkline.
+          if (signal?.aborted || (isDashyError(error) && error.status === 499)) throw error;
+          console.error(`[dashy] Sparkline of metric ${name} failed`, error);
+        }
+      }
+    }
+    return block;
+  }
   async dataset(
     name: string,
     raw: Record<string, unknown> = {},
@@ -414,6 +458,35 @@ export class DashyEngine {
     );
   }
 
+  /**
+   * One dataset block of a dashboard, loaded exactly as the dashboard shows it
+   * (filters and cross-filter exclusions). `prepare` runs before any query, so
+   * callers can reject bad options without paying for one. Errors keep their status.
+   */
+  async dashboardBlock(
+    name: string,
+    blockId: string,
+    raw: Record<string, unknown> = {},
+    principal?: Principal,
+    signal?: AbortSignal,
+    options: DashboardOptions = {},
+    prepare?: (definition: DatasetDefinition) => void,
+  ): Promise<{ shell: DashboardShell; definition: DatasetDefinition; result: QueryResult }> {
+    const shell = this.dashboardShell(name, raw, principal, options);
+    if (shell.missing.length)
+      throw new DashyError(`${this.project.params[shell.missing[0]!]!.label} is required`);
+    const block = shell.definition.blocks.find((b) => b.id === blockId);
+    if (!block || block.type !== "dataset") throw new DashyError("Dataset block not found", 404);
+    const definition = this.project.datasets[block.dataset]!;
+    // Check access first, so option errors never reveal a restricted dataset's columns.
+    requireRead(definition.roles, principal);
+    requireRead(this.project.queries[definition.query]!.roles, principal);
+    prepare?.(definition);
+    const [loaded] = (await this.loadBlocks(shell, [block], principal, signal, options, true)).blocks;
+    if (loaded?.type !== "dataset") throw new Error("Unable to load this block");
+    return { shell, definition, result: loaded.result };
+  }
+
   async dashboard(
     name: string,
     raw: Record<string, unknown> = {},
@@ -437,6 +510,8 @@ export class DashyEngine {
     principal?: Principal,
     signal?: AbortSignal,
     options: ExecutionOptions = {},
+    /** Throw block errors (with their status) instead of returning error blocks. */
+    rethrow = false,
   ): Promise<DashboardData> {
     const { definition, params, crossFilters } = shell;
     const session = new QuerySession(this.project, this.adapters, signal, this.pool);
@@ -466,14 +541,14 @@ export class DashyEngine {
       };
       const blocks: BlockResult[] = [];
       for (const block of selected) {
-        const execute = executor(crossFilters.filter((origin) => origin.block === block.id).map((origin) => origin.param));
+        const excluded = crossFilters.filter((origin) => origin.block === block.id).map((origin) => origin.param);
+        const execute = executor(excluded);
         try {
           if (block.type === "metric")
             blocks.push({
+              ...await this.metricBlock(block.metric, principal, execute,
+                executor([...excluded, ...(definition.unfiltered?.[block.id] ?? [])]), signal),
               id: block.id,
-              type: "metric",
-              definition: this.project.metrics[block.metric]!,
-              value: await this.metric(block.metric, {}, principal, execute),
             });
           else
             blocks.push({
@@ -484,6 +559,7 @@ export class DashyEngine {
             });
         } catch (error) {
           if (signal?.aborted) throw new DashyError("Request cancelled", 499);
+          if (rethrow) throw error;
           if (!isDashyError(error))
             console.error(`[dashy] Block ${block.id} failed`, error);
           blocks.push({

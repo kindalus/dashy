@@ -26,6 +26,7 @@ const loaders: Record<ChartModule, () => Promise<unknown>> = {
   sankey: () => import("echarts/lib/chart/sankey/install.js").then((m) => m.install),
   boxplot: () => import("echarts/lib/chart/boxplot/install.js").then((m) => m.install),
   visualMap: () => import("echarts/lib/component/visualMap/install.js").then((m) => m.install),
+  markLine: () => import("echarts/lib/component/marker/installMarkLine.js").then((m) => m.install),
 };
 const loaded = new Map<ChartModule, Promise<void>>();
 function ensure(modules: ChartModule[]): Promise<void> {
@@ -50,7 +51,9 @@ function readChartTheme(element: HTMLElement): ChartTheme {
     border: token("--line"),
     grid: token("--chart-grid"),
     surface: token("--surface"),
-    font: style.fontFamily,
+    // ECharts writes the font unescaped into SVG attributes, so double quotes would
+    // break exported SVG; CSS accepts single quotes equally.
+    font: style.fontFamily.replaceAll('"', "'"),
     danger: token("--danger"),
     warning: token("--warning"),
     success: token("--success"),
@@ -68,6 +71,16 @@ export function createChart(element: HTMLElement, onSelect?: (row: Row, event: M
   const observer = new ResizeObserver(() => chart?.resize());
   observer.observe(element);
   let rowAt: ReturnType<typeof buildChart>["rowAt"] = () => undefined;
+  let last: Record<string, unknown> | undefined;
+  /**
+   * Re-applying an option with notMerge resets component state; keep the series the
+   * user hid with the legend, across data updates, printing and image snapshots.
+   */
+  const keepLegend = (option: Record<string, unknown>) => {
+    const selected = (chart?.getOption() as { legend?: { selected?: Record<string, boolean> }[] } | undefined)?.legend?.[0]?.selected;
+    const legend = option.legend as Record<string, unknown> | undefined;
+    return selected && legend && Object.keys(selected).length ? { ...option, legend: { ...legend, selected } } : option;
+  };
   let version = 0;
   const create = (modules: ChartModule[]) => {
     chart?.dispose();
@@ -79,14 +92,37 @@ export function createChart(element: HTMLElement, onSelect?: (row: Row, event: M
     });
   };
   return {
-    async update(definition: DatasetDefinition, result: QueryResult, locale: string, selected?: Selection) {
+    /**
+     * Renders the chart and resolves to its notes (analyses that could not be drawn),
+     * or undefined when a newer update superseded this one.
+     */
+    async update(
+      definition: DatasetDefinition, result: QueryResult, locale: string, selected?: Selection,
+      /** Printing: render the final frame at once and let print CSS scale it. */
+      print = false,
+    ): Promise<string[] | undefined> {
       const current = ++version;
       const built = buildChart(definition, result, locale, readChartTheme(element), selected);
       await ensure(built.modules);
-      if (current !== version) return;
+      if (current !== version) return undefined;
+      // Read the legend state before a new chart module forces a new instance.
+      const option = keepLegend(built.option);
       if (!chart || built.modules.some((name) => !installed.has(name))) create(built.modules);
       rowAt = built.rowAt;
-      chart!.setOption(built.option, { notMerge: true });
+      last = built.option;
+      chart!.setOption(print ? { ...option, animation: false } : option, { notMerge: true });
+      // ECharts draws a fixed-size SVG; a viewBox lets print CSS scale it to the page.
+      const svg = element.querySelector("svg");
+      if (svg && print) svg.setAttribute("viewBox", `0 0 ${chart!.getWidth()} ${chart!.getHeight()}`);
+      else svg?.removeAttribute("viewBox");
+      return built.notes ?? [];
+    },
+    /** The rendered chart as standalone SVG markup, for image export. */
+    snapshot(): { svg: string; width: number; height: number } | undefined {
+      if (!chart) return undefined;
+      // Settle any running animation, so the image shows the final frame.
+      if (last) chart.setOption({ ...keepLegend(last), animation: false }, { notMerge: true });
+      return { svg: chart.renderToSVGString(), width: chart.getWidth(), height: chart.getHeight() };
     },
     dispose() {
       version++;

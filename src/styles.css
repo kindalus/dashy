@@ -388,6 +388,54 @@ main {
   overflow-wrap: anywhere;
   line-height: 1.2;
 }
+.metric-compare {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.metric-compare .metric-arrow {
+  font-size: 9px;
+}
+.metric-compare.tone-good .metric-arrow {
+  color: var(--success);
+}
+.metric-compare.tone-bad .metric-arrow {
+  color: var(--danger);
+}
+.metric-target {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.metric-target-track {
+  height: 6px;
+  margin-bottom: 5px;
+  background: var(--surface-hover);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.metric-target-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+}
+.metric-sparkline {
+  display: block;
+  width: 100%;
+  height: 28px;
+  margin-top: 10px;
+}
+.metric-sparkline polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
 .metric-description {
   font-size: 11px;
   margin-top: 8px;
@@ -397,10 +445,14 @@ main {
 }
 .block-heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: start;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 18px;
+}
+.block-heading > div:first-child {
+  flex: 1 1 220px;
 }
 .block-heading p {
   font-size: 12px;
@@ -701,6 +753,11 @@ ul.popover.option-list {
   color: var(--muted);
   text-align: center;
 }
+.chart-note {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
 .unfiltered-note {
   margin-top: 12px;
   font-size: 11px;
@@ -721,6 +778,117 @@ ul.popover.option-list {
 }
 tbody tr.is-selected {
   background: var(--accent-soft);
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.block-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.export-menu {
+  position: relative;
+}
+.export-menu summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 5px 8px;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-button);
+  background: var(--surface);
+}
+.export-menu summary::-webkit-details-marker {
+  display: none;
+}
+.export-menu[open] summary,
+.export-menu summary:hover {
+  color: var(--text);
+}
+.export-options {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  display: grid;
+  min-width: 140px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.12);
+}
+.export-options a {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text);
+  text-decoration: none;
+  border-radius: var(--radius-button);
+}
+.export-options a:hover,
+.export-options a:focus-visible {
+  background: var(--surface-hover);
+}
+.top-n select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.top-n select {
+  height: 36px;
+  padding: 4px 8px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+.sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  white-space: nowrap;
+}
+.sort-button:hover,
+th[aria-sort] .sort-button {
+  color: var(--text);
+}
+.sort-indicator {
+  font-size: 9px;
+  min-width: 9px;
+}
+tr.subtotal-row td,
+tr.total-row td {
+  font-weight: 600;
+  background: var(--table-heading);
+}
+tr.total-row td {
+  border-top: 2px solid var(--line);
+}
+/* Inner subtotal levels are lighter than the outermost one. */
+tr.subtotal-row:not([data-level="0"]) td {
+  font-weight: 500;
+  background: transparent;
+}
+tr.other-row td {
+  color: var(--muted);
+  font-style: italic;
 }
 .chart-frame.is-interactive .chart {
   cursor: pointer;
@@ -930,5 +1098,169 @@ tbody tr.is-selected {
   * {
     transition: none !important;
     animation: none !important;
+  }
+}
+.page-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.export-options button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text);
+  border-radius: var(--radius-button);
+}
+.export-options button:hover,
+.export-options button:focus-visible {
+  background: var(--surface-hover);
+}
+.image-error {
+  font-size: 11px;
+  color: var(--danger);
+}
+/*
+ * Paper is white: dark themes print with a light palette. data-printing is set at
+ * beforeprint so charts re-render with these colours; @media print covers print
+ * paths that fire no events.
+ */
+:root[data-theme="claude-code"][data-printing] {
+  color-scheme: light;
+  --canvas: #ffffff;
+  --surface: #ffffff;
+  --surface-hover: #f3f1ee;
+  --text: #26221f;
+  --muted: #5f574d;
+  --line: #d6d0c7;
+  --control-border: #a39a8e;
+  --accent: #9a5b3c;
+  --accent-soft: #f4e8e1;
+  --accent-border: #c9a08a;
+  --metric-color: #9a5b3c;
+  --metric-border: #c9a08a;
+  --table-heading: #f3efe9;
+  --row-hover: #f7f4f0;
+  --danger: #a4262c;
+  --chart-1: #b5714f;
+  --chart-2: #5f8a4c;
+  --chart-3: #4f7aa6;
+  --chart-4: #a08534;
+  --chart-5: #8462a0;
+  --chart-6: #3f8a83;
+  --chart-grid: #e4dfd8;
+}
+@media print {
+  html:root[data-theme="claude-code"] {
+    color-scheme: light;
+    --canvas: #ffffff;
+    --surface: #ffffff;
+    --surface-hover: #f3f1ee;
+    --text: #26221f;
+    --muted: #5f574d;
+    --line: #d6d0c7;
+    --control-border: #a39a8e;
+    --accent: #9a5b3c;
+    --accent-soft: #f4e8e1;
+    --accent-border: #c9a08a;
+    --metric-color: #9a5b3c;
+    --metric-border: #c9a08a;
+    --table-heading: #f3efe9;
+    --row-hover: #f7f4f0;
+    --danger: #a4262c;
+    --chart-1: #b5714f;
+    --chart-2: #5f8a4c;
+    --chart-3: #4f7aa6;
+    --chart-4: #a08534;
+    --chart-5: #8462a0;
+    --chart-6: #3f8a83;
+    --chart-grid: #e4dfd8;
+  }
+}
+/* The applied filters, printed where the filter form was. */
+.print-summary {
+  display: none;
+}
+@media print {
+  @page {
+    margin: 12mm;
+  }
+  body,
+  .workspace {
+    background: #fff;
+  }
+  .workspace {
+    display: block;
+  }
+  .sidebar,
+  .topbar,
+  .skip-link,
+  .back-link,
+  .filters,
+  .cross-filters,
+  .page-actions,
+  .update-status,
+  .block-tools,
+  .view-toggle,
+  .table-footer > div,
+  .action-menu,
+  .block-loading {
+    display: none !important;
+  }
+  main {
+    max-width: none;
+    padding: 0;
+  }
+  .page-heading {
+    margin-bottom: 8px;
+  }
+  .print-summary {
+    display: block;
+    margin: 0 0 14px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .dashboard-grid {
+    gap: 10px;
+  }
+  .block {
+    box-shadow: none;
+  }
+  /* Keep cards and charts whole; long tables may break across pages. */
+  .metric-block,
+  .chart-frame {
+    break-inside: avoid;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tr {
+    break-inside: avoid;
+  }
+  .table-scroll {
+    overflow: visible;
+  }
+  td {
+    white-space: normal;
+  }
+  /* The total row prints once, after the last row, rather than on every page. */
+  tfoot {
+    display: table-row-group;
+  }
+  .chart {
+    height: auto;
+  }
+  /* ECharts wraps its fixed-size SVG; with the viewBox added at print time it scales to the page. */
+  .chart > div {
+    width: 100% !important;
+    height: auto !important;
+  }
+  .chart svg {
+    position: static !important;
+    display: block;
+    width: 100% !important;
+    height: auto !important;
   }
 }

@@ -78,7 +78,7 @@ Controls follow the definition; there is no per-block configuration.
 
 ### Reserved query keys
 
-`api_key`, `refresh`, `_from` and `_xf` belong to the engine and are never validated as parameters; they cannot be used as parameter names. `refresh=true` bypasses the result cache, `_from` holds the drillthrough origin and `_xf` the cross-filter origins.
+`api_key`, `refresh`, `_from`, `_xf`, `_format`, `_sort` and `_top` belong to the engine and are never validated as parameters; they cannot be used as parameter names. `refresh=true` bypasses the result cache, `_from` holds the drillthrough origin and `_xf` the cross-filter origins; the last three select an [export](#export).
 
 ```ts
 // HTTP: ?period.from=2026-01-01&period.until=2026-06-30&region=North
@@ -129,7 +129,7 @@ queries: {
 }
 ```
 
-The internal `sql` helper is implemented in `core/sql.ts`. `eq`, `in` and `range` build bound predicates. `where` combines non-empty predicates with `AND`. `fragment` accepts trusted SQL text and a values array. These helpers never infer business rules or filter column mappings.
+The internal `sql` helper is implemented in `core/sql.ts`. `eq`, `in` and `range` build bound predicates; `previousRange` returns the [comparison range](#comparison-target-and-sparkline) of a date range. `where` combines non-empty predicates with `AND`. `fragment` accepts trusted SQL text and a values array. These helpers never infer business rules or filter column mappings.
 
 The response is `{ columns, rows, truncated, durationMs, cached? }`. Numeric values exceeding JSON's exact representation may arrive as strings, as returned by DuckDB. The UI formats numeric strings without altering the API value. An empty dataset retains its column metadata.
 
@@ -181,6 +181,30 @@ Validation checks every referenced column at startup. Horizontal charts support 
 
 When the series legend does not fit, its arrows page through the remaining labels on one line, keeping the legend clear of the plot on narrow screens.
 
+### Reference lines, trends and forecasts
+
+Cartesian series can carry three analyses, computed in the browser from the rows already loaded:
+
+```ts
+chart: {
+  type: 'line', x: 'month',
+  series: [{
+    key: 'revenue', label: 'Revenue',
+    reference: [{ kind: 'average' }, { kind: 'constant', value: 1_000_000, label: 'Target' }],
+    trend: 'linear',
+    forecast: { periods: 6, method: 'seasonal', season: 12 }
+  }]
+}
+```
+
+- **`reference`:** dashed lines at the series' `average`, `median`, `min` or `max`, or at a `constant` `value`, labelled with `label` (default the kind, or `Target`) and the formatted value. Horizontal charts draw them across the value axis.
+- **`trend: 'linear'`:** a dashed least-squares line, fitted against the row position on category axes, the date on time axes and the x value on value axes.
+- **`forecast`:** projects `periods` (1–120) past the last row with `linear` (default), `holt` (a changing trend) or `seasonal` (additive Holt-Winters with `season` periods, e.g. 12 months), choosing smoothing parameters by one-step error. It draws a dashed line from the last actual value and a shaded band of about 95%: the regression prediction interval for `linear`, and ±1.96 × one-step RMSE × √horizon for `holt` and `seasonal`. A series that is never negative is not projected below zero. The band shows in the chart, not in the tooltip.
+
+A forecast needs evenly spaced date labels on the x axis, in ascending order: `YYYY`, `YYYY-MM`, `YYYY-Qn`, or `YYYY-MM-DD` one day, week, month, quarter or year apart. Monthly, quarterly and yearly dates must fall on days 1–28, so month-end dates do not qualify; timestamps such as `2024-01-01 00:00:00` do not either, so format the period in SQL (`strftime(day, '%Y-%m')` or a cast to `DATE`). It also needs a value in every period and enough of them: 3 for linear, 4 for holt, two seasons for seasonal. Otherwise the chart shows the data with a note explaining why there is no forecast, for example after a filter leaves a month without sales. A last period that is still incomplete pulls the forecast down; leave it out of the query when that matters.
+
+References, trend and forecast cannot be used on stacked series, and forecasts need a vertical chart with a category or time axis. With Top N, the Other row is not part of any statistic. Clicking a trend or forecast selects nothing. Tables, exports and the API show only the query's rows.
+
 ### Column parameters
 
 A column can declare which parameter its values belong to. This is information about the data, never a navigation target:
@@ -194,6 +218,44 @@ columns: [
 ```
 
 Dashboards turn these annotations into [cross-filters and drillthrough](#interaction-cross-filter-and-drillthrough). The catalog exposes them, so API clients can chain datasets that accept the same parameter. Range parameters cannot be column parameters.
+
+### Sorting, totals, subtotals and Top N
+
+Every table column heading sorts: ascending, descending, then back to the query's order. Numbers and numeric strings sort numerically (integers beyond 2^53 exactly), text uses the project locale, and empty values stay last in both directions. Sorting changes the table only; charts keep the query's order. `defaultSort` sets the initial order.
+
+A column's `aggregate` declares how it combines across rows: `sum`, `count` (non-empty values), `min`, `max` and `avg` (numeric values only), or `{ ratio: [numerator, denominator] }`, which divides the two other columns' sums. Use a ratio for margins and rates; averaging row ratios gives the wrong total. Use `sum` on a count column only when rows cannot overlap, e.g. orders per country when every order has one country.
+
+```ts
+datasets: {
+  products: {
+    label: 'Products',
+    query: 'products',
+    columns: [
+      { key: 'category', label: 'Category' },
+      { key: 'product', label: 'Product' },
+      { key: 'revenue', label: 'Revenue', format: { style: 'currency', currency: 'EUR' }, aggregate: 'sum' },
+      { key: 'profit', label: 'Profit', format: { style: 'currency', currency: 'EUR' }, aggregate: 'sum' },
+      { key: 'margin', label: 'Margin', format: { style: 'percent' }, aggregate: { ratio: ['profit', 'revenue'] } }
+    ],
+    defaultSort: { column: 'revenue', direction: 'desc' },
+    totals: true,              // a total row on every page
+    subtotals: ['category'],   // group rows, outermost first, with a subtotal after each group
+  },
+  brands: {
+    label: 'Revenue by brand',
+    query: 'brands',
+    columns: [{ key: 'brand', label: 'Brand' }, { key: 'revenue', label: 'Revenue', aggregate: 'sum' }],
+    chart: { type: 'pie', category: 'brand', value: 'revenue' },
+    topN: { by: 'revenue', options: [5, 10], default: 5, other: true }
+  }
+}
+```
+
+Totals and subtotals use every row of the result, not just the visible page; with Top N they cover the rows shown, including those combined into Other. Columns without `aggregate` stay empty in them, and "Total" goes in the label column: the chart's key column, else the first column without an aggregate. With subtotals, sorting orders rows within each group and orders the groups by their subtotal; sorting by a column the subtotal leaves empty keeps the groups in order of first appearance. Subtotal rows count towards the eight rows of a table page.
+
+`topN` adds a selector (the options plus All) that keeps the rows with the highest `by` values, or the lowest with `order: 'bottom'`, in both the chart and the table. Rows without a `by` value are never kept; when no row has one, Top N shows the result unchanged. The chart keeps the query's order; the table applies its own sort. `default` may be `0` to start with All, and `options` defaults to `[5, 10, 25]`. `other: true` adds one row combining the rest, named `otherLabel` (default `Other`) in the `label` column (default the label column above). It always stays last, never filters when clicked and is never highlighted. It requires an aggregate on `by` and a pie, funnel, radar or category-axis cartesian chart, or no chart; on other charts a synthetic category would mislead. A real value equal to the Other label is still combined into Other when it falls outside the kept rows. Top N cannot be combined with subtotals.
+
+A result that reached its row limit is incomplete, so it gets no totals, subtotals, Top N or Other row, and the table says so. Startup validation rejects unknown columns, self-referencing ratios, aggregates on grouping or label columns, and totals or subtotals without any aggregate.
 
 ## Metrics
 
@@ -209,6 +271,44 @@ metrics: {
 ```
 
 A missing column or multiple result rows is an error. No rows or a SQL `NULL` gives a null metric, displayed as an em dash. Use `COALESCE` in SQL when zero is the intended business meaning.
+
+### Comparison, target and sparkline
+
+A metric card can compare its value with another column of the same query row, show progress towards a target and draw a small trend line:
+
+```ts
+metrics: {
+  revenue: {
+    label: 'Revenue', query: 'summary', column: 'revenue',
+    format: { style: 'currency', currency: 'EUR', decimals: 0 },
+    compare: { column: 'previous_revenue', label: 'vs previous period' },  // as: 'percent' (default) | 'delta'; better: 'higher' (default) | 'lower'
+    target: { column: 'budget' },        // or { value: 1_000_000, label: 'Budget' }
+    sparkline: { dataset: 'monthly', value: 'revenue' }
+  }
+}
+```
+
+- **`compare`** shows the change from `column` as a signed percentage (`as: 'percent'`) or difference in the metric's format (`as: 'delta'`; for a percent metric, in percentage points such as `+5.0 pp`), with an arrow coloured by whether the change is good: `better: 'lower'` suits costs or delivery days. The arrow and sign always come with the text, never colour alone. A change that displays as zero reads as unchanged; a missing comparison value, or a zero base for a percentage, shows nothing.
+- **`target`** draws a progress bar and "75% of target €1,000,000", from a column of the row or a constant `value`.
+- **`sparkline`** draws a dataset's numeric `value` column in query order. Its query must accept the metric query's parameters, so it follows the same filters, including the block's cross-filter exclusions and `unfiltered` list. It is decorative: it is left out when the viewer cannot read that dataset or when its query fails, without affecting the value.
+
+Comparison and target columns come from the metric's own query row, so they add no query. Build the previous period in SQL with `sql.previousRange(range, mode)`. With `period` (default), a range of whole calendar months (from the 1st to a month's last day) gives the same number of months just before it, so March compares with February, a quarter with the previous quarter and 2020 with 2019; any other range gives the same number of days just before it. `year` gives the same dates a year earlier (29 February becomes 28 February); use it for to-date ranges such as year to date, which are not whole months. It returns `undefined` without a valid date range, so return `NULL` then:
+
+```ts
+build: ({ source, params, sql }) => {
+  const period = params.period as { from: string; until: string } | undefined
+  const previous = sql.previousRange(period)
+  const current = sql.where(sql.range('day', period))
+  const prior = previous ? sql.where(sql.range('day', previous)) : sql.fragment('WHERE FALSE')
+  return {
+    text: `SELECT (SELECT SUM(amount) FROM ${source('sales')} ${current.text}) AS revenue,
+                  (SELECT SUM(amount) FROM ${source('sales')} ${prior.text}) AS previous_revenue`,
+    values: [...current.values, ...prior.values]
+  }
+}
+```
+
+In dashboard data, a metric block carries `compare`, `target` and `sparkline` when declared. `/api/metrics/:name` still returns `{ value }`.
 
 ## Dashboards
 
@@ -270,6 +370,27 @@ operations: {
 **One click.** When a value has one action, the click performs it. With two or more (for example, filter this dashboard and open Customer 360), a small menu opens next to the value. It works the same with a mouse, touch or keyboard: table values are buttons, the menu takes focus and supports arrow keys and Escape.
 
 The page shell is available as `GET /api/dashboard-shell/:name` (same parameters and `_xf`), returning `{ params, requests, missing, crossFilters, … }` without running queries.
+
+## Export
+
+Every dataset block has a Download menu with CSV and Excel. The file holds the block as shown: the dashboard's filters and cross-filter exclusions, the current sort and the Top N choice. It is served by the server, so it follows the same permissions, row limit and cache:
+
+```text
+GET /api/dashboard-export/:dashboard/:block?<filters>&_xf=…&_format=csv|xlsx&_sort=<column>:asc|desc&_top=<n>
+```
+
+`_format` defaults to `csv`. `_sort` must name a column of the dataset; without it the dataset's `defaultSort` applies, and an empty `_sort=` keeps the query's order (the Download menu always sends the table's current order). `_top` is `0` (all rows) or one of the dataset's `topN` options; without it, the dataset's initial choice applies. Options are checked before any query runs. Metric and unknown blocks return 404 and invalid options 400; errors loading the block keep their status (for example 403 when a dataset or query role denies access).
+
+- **CSV:** UTF-8 with a byte order mark, a header of column labels, raw values (dot decimals, ISO dates; the computed Other row is rounded to 15 significant digits) and CRLF line ends, quoted per RFC 4180. It holds the data rows, including Top N's Other row, but not subtotal or total rows. Text that a spreadsheet would run as a formula (starting with `=`, `+`, `-`, `@`, tab or carriage return) is prefixed with `'`, unless it is a number.
+- **Excel:** one sheet with typed cells, number formats from the column formats, bold subtotal and total rows, a frozen header and fitted widths. Numeric strings (DuckDB returns many counts and sums as strings) become numbers in number, currency, percent and aggregated columns; in columns without a format only plain decimals do, so codes such as `00123`, `+244…` or `1e5` stay text. `text` columns and integers beyond 2^53 always stay text; give columns of codes or versions such as `1.10` `format: { style: 'text' }`. Date columns become dates; timestamps without a time zone are read as UTC, as in the UI. Percent columns without `decimals` use one or two decimals (`0.0#%`). Subtotal labels use the raw group value. A second sheet, Filters, lists the dashboard, the block, every dashboard filter (`All` when unset, `Not applied to this block` for the block's own cross-filters and `unfiltered` parameters), the rows exported, the sort, the generation time and, for incomplete results, a note. A data sheet that would be named Filters or History is named Data. The workbook is written with a streaming writer: about a second for 100,000 rows of a few columns.
+
+Files are named `<dashboard>-<block>-<YYYY-MM-DD>.<csv|xlsx>`. A result that reached its row limit exports what was returned, without totals, subtotals or Top N.
+
+### Images and printing
+
+In chart view, the Download menu also saves the chart as PNG (at twice its size) or SVG, generated in the browser from the chart's final frame, even mid-animation. The image carries the block's title and a caption, wrapped to the image width, with the filters that narrow the block (filters set to All, the block's own cross-filters and its `unfiltered` parameters are left out), so it stands on its own; files are named `<dashboard>-<block>.<png|svg>`. If the browser cannot produce the image, the block says so. Table view offers only the data formats.
+
+**Print / PDF**, next to Refresh, opens the browser's print dialog, where "Save as PDF" makes a PDF. The printed page shows the title, a line with every filter value (noting the block a cross-filter does not apply to), the metric cards and the blocks, without navigation, filter controls or menus. Tables print every row rather than one page, up to 2,000 rows with a note pointing to the CSV and Excel downloads for more; they repeat their header on each page and show the total once at the end. Charts and cards are not split across pages; charts are redrawn without animation and scale to the paper width. Dark themes print with a light palette, charts included. The layout follows the browser's paper size and margins. There is no server-side PDF.
 
 ## Limits and cache
 

@@ -134,3 +134,47 @@ export function relativeDefaultError(def: ParamDefinition, value: ParamDefault):
     return `unknown relative default ${(value as { relative: unknown }).relative}`;
   return undefined;
 }
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const toUtc = (date: string) => Date.parse(`${date}T00:00:00Z`);
+const fromUtc = (time: number) => new Date(time).toISOString().slice(0, 10);
+/** The same calendar day `years` earlier; 29 February becomes 28 February. */
+function shiftYears(date: string, years: number): string {
+  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
+  const last = new Date(Date.UTC(y - years, m, 0)).getUTCDate();
+  return `${String(y - years).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(Math.min(d, last)).padStart(2, "0")}`;
+}
+/** The first day of the month `months` before `date`'s month. */
+function monthStart(date: string, months: number): string {
+  const [y, m] = date.split("-").map(Number) as [number, number];
+  const index = y * 12 + (m - 1) - months;
+  return `${String(Math.floor(index / 12)).padStart(4, "0")}-${String((index % 12) + 1).padStart(2, "0")}-01`;
+}
+/**
+ * The comparison range for a date range. `period`: a range of whole calendar
+ * months (from the 1st to a month's last day) maps to the same number of months
+ * just before it, so March compares with February and 2020 with 2019; any other
+ * range maps to the same number of days just before it. `year`: the same dates
+ * one year earlier. Undefined for missing, non-date or reversed ranges, so
+ * queries can return NULL.
+ */
+export function previousRange(
+  range: { from: unknown; until: unknown } | undefined,
+  mode: "period" | "year" = "period",
+): { from: string; until: string } | undefined {
+  if (!range || typeof range.from !== "string" || typeof range.until !== "string") return undefined;
+  const { from, until } = range;
+  if (!ISO_DATE.test(from) || !ISO_DATE.test(until) || fromUtc(toUtc(from)) !== from || fromUtc(toUtc(until)) !== until) return undefined;
+  if (toUtc(until) < toUtc(from)) return undefined;
+  if (mode === "year") return { from: shiftYears(from, 1), until: shiftYears(until, 1) };
+  const DAY = 86_400_000;
+  const monthEnd = fromUtc(toUtc(until) + DAY).endsWith("-01");
+  if (from.endsWith("-01") && monthEnd) {
+    const [fy, fm] = from.split("-").map(Number) as [number, number];
+    const [uy, um] = until.split("-").map(Number) as [number, number];
+    const months = (uy * 12 + um) - (fy * 12 + fm) + 1;
+    return { from: monthStart(from, months), until: fromUtc(toUtc(from) - DAY) };
+  }
+  const end = toUtc(from) - DAY;
+  return { from: fromUtc(end - (toUtc(until) - toUtc(from))), until: fromUtc(end) };
+}

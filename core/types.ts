@@ -136,11 +136,38 @@ export interface Format {
 }
 /** Declares that a column holds values of a project parameter. Never a navigation target. */
 export type ColumnParam = string | { name: string; from: string };
+/**
+ * How a column combines across rows in totals, subtotals and Top N's "Other" row.
+ * `ratio` divides the sums of two columns, e.g. profit / revenue for a margin.
+ */
+export type ColumnAggregate =
+  | "sum" | "count" | "min" | "max" | "avg"
+  | { ratio: readonly [numerator: string, denominator: string] };
 export interface DatasetColumn {
   key: string;
   label: string;
   format?: Format;
   param?: ColumnParam;
+  aggregate?: ColumnAggregate;
+}
+export interface TableSort {
+  column: string;
+  direction: "asc" | "desc";
+}
+export interface TopNDefinition {
+  /** Numeric column that ranks the rows. */
+  by: string;
+  /** Choices offered next to "All". Default [5, 10, 25]. */
+  options?: readonly number[];
+  /** Initial choice; one of `options`. Default the first option. */
+  default?: number;
+  /** "top" keeps the highest values (default), "bottom" the lowest. */
+  order?: "top" | "bottom";
+  /** Combine the remaining rows into one row. Requires an aggregate on `by`. */
+  other?: boolean;
+  otherLabel?: string;
+  /** Column that names the "Other" row. Default the chart's key column, then the first column without an aggregate. */
+  label?: string;
 }
 export type SeriesKind = "line" | "bar" | "area" | "scatter";
 export interface CartesianSeries {
@@ -154,6 +181,27 @@ export interface CartesianSeries {
   /** Series with the same stack name are stacked. */
   stack?: string;
   smooth?: boolean;
+  /** Horizontal (or, on horizontal charts, vertical) lines at a statistic of this series or a constant. */
+  reference?: readonly ReferenceLine[];
+  /** Adds a dashed least-squares trend line. Not for stacked series. */
+  trend?: "linear";
+  /** Projects the series past the last period, in the browser. Requires evenly spaced date periods on the x axis. */
+  forecast?: SeriesForecast;
+}
+export interface ReferenceLine {
+  kind: "average" | "median" | "min" | "max" | "constant";
+  /** Required for `constant`. */
+  value?: number;
+  /** Defaults to the kind, e.g. "Average", or "Target" for a constant. */
+  label?: string;
+}
+export interface SeriesForecast {
+  /** Periods to project, 1–120. */
+  periods: number;
+  /** linear (default) fits a line; holt follows a changing trend; seasonal adds a repeating season (Holt-Winters). */
+  method?: "linear" | "holt" | "seasonal";
+  /** Periods per season for `seasonal`, e.g. 12 for months in a year. */
+  season?: number;
 }
 export type ChartDefinition =
   | {
@@ -194,6 +242,14 @@ export interface DatasetDefinition {
   columns: readonly DatasetColumn[];
   chart?: ChartDefinition;
   roles?: readonly string[];
+  /** Initial table order. Users can change it by clicking a column heading. */
+  defaultSort?: TableSort;
+  /** Adds a total row using each column's `aggregate`. */
+  totals?: boolean;
+  /** Groups table rows by these columns, outermost first, with a subtotal row per group. */
+  subtotals?: readonly string[];
+  /** Lets users keep only the N highest (or lowest) rows, in the table and the chart. */
+  topN?: TopNDefinition;
 }
 export interface MetricDefinition {
   label: string;
@@ -202,6 +258,32 @@ export interface MetricDefinition {
   column: string;
   format?: Format;
   roles?: readonly string[];
+  /** Compares the value with another column of the same query row, e.g. the previous period. */
+  compare?: MetricComparison;
+  /** A goal: another column of the query row, or a constant. */
+  target?: MetricTarget;
+  /** A small trend line from a dataset's column, in query order. */
+  sparkline?: MetricSparkline;
+}
+export interface MetricComparison {
+  column: string;
+  /** Default "vs previous". */
+  label?: string;
+  /** percent (default) shows the relative change; delta the difference in the metric's format. */
+  as?: "percent" | "delta";
+  /** Whether a higher value is good (default) or bad, e.g. costs or delivery days. */
+  better?: "higher" | "lower";
+}
+export interface MetricTarget {
+  column?: string;
+  value?: number;
+  /** Default "Target". */
+  label?: string;
+}
+export interface MetricSparkline {
+  dataset: string;
+  /** Numeric column of the dataset to draw. */
+  value: string;
 }
 export type DashboardBlock = { id: string; width?: number } & (
   | { type: "metric"; metric: string }
@@ -357,7 +439,11 @@ export interface QueryResult {
   cached?: boolean;
 }
 export type BlockResult = { id: string } & (
-  | { type: "metric"; definition: MetricDefinition; value: Scalar }
+  | {
+      type: "metric"; definition: MetricDefinition; value: Scalar;
+      /** Present when the metric declares them. */
+      compare?: Scalar; target?: Scalar; sparkline?: (number | null)[];
+    }
   | { type: "dataset"; definition: DatasetDefinition; result: QueryResult }
   | { type: "error"; message: string }
 );

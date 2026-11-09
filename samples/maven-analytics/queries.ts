@@ -76,23 +76,80 @@ function query(label: string, select: string, detail = false): QueryDefinition {
   };
 }
 
-export const queries = {
-  summary: query(
-    "Sales summary",
-    `SELECT COALESCE(SUM(revenue), 0) AS revenue,
+const summarySelect = `SELECT COALESCE(SUM(revenue), 0) AS revenue,
     COALESCE(SUM(revenue - cost), 0) AS profit, COALESCE(SUM(quantity), 0) AS units,
     COUNT(DISTINCT order_number) AS orders, COUNT(DISTINCT customer_id) AS customers,
     COALESCE(SUM(revenue) / NULLIF(COUNT(DISTINCT order_number), 0), 0) AS average_order,
-    COALESCE(SUM(revenue - cost) / NULLIF(SUM(revenue), 0), 0) AS margin FROM filtered`,
-  ),
+    COALESCE(SUM(revenue - cost) / NULLIF(SUM(revenue), 0), 0) AS margin FROM filtered`;
+
+/**
+ * Totals for the selected period plus the same totals for the period just before
+ * it (sql.previousRange), so metrics can show the change. Without a period, or
+ * without sales in the previous period, the previous columns are NULL.
+ */
+function summary(): QueryDefinition {
+  const base = query("Sales summary", summarySelect);
+  return {
+    ...base,
+    build(context) {
+      const current = sales(context);
+      const period = context.params.period as { from: string; until: string } | undefined;
+      const previous = context.sql.previousRange(period);
+      if (!previous)
+        return {
+          text: `SELECT *, CAST(NULL AS DOUBLE) AS previous_revenue, CAST(NULL AS DOUBLE) AS previous_profit,
+            CAST(NULL AS BIGINT) AS previous_orders FROM (${current.text} ${summarySelect})`,
+          values: current.values,
+        };
+      const prior = sales({ ...context, params: { ...context.params, period: previous } });
+      return {
+        text: `SELECT cur.*, prev.revenue AS previous_revenue, prev.profit AS previous_profit, prev.orders AS previous_orders
+          FROM (${current.text} ${summarySelect}) cur
+          CROSS JOIN (${prior.text} SELECT SUM(revenue) AS revenue, SUM(revenue - cost) AS profit,
+            NULLIF(COUNT(DISTINCT order_number), 0) AS orders FROM filtered) prev`,
+        values: [...current.values, ...prior.values],
+      };
+    },
+  };
+}
+
+/**
+ * Monthly revenue without an incomplete last month, which would drag forecasts
+ * down: a month counts only when it ends by both the selected period's end and
+ * the last day in the data.
+ */
+function monthlyComplete(): QueryDefinition {
+  const base = query("Monthly revenue, complete months", "");
+  return {
+    ...base,
+    build(context) {
+      const current = sales(context);
+      const until = (context.params.period as { until?: string } | undefined)?.until;
+      const ends = [
+        "date_trunc('month', (SELECT MAX(order_date) FROM enriched) + INTERVAL 1 DAY)",
+        ...(until ? ["date_trunc('month', CAST(? AS DATE) + INTERVAL 1 DAY)"] : []),
+      ];
+      return {
+        text: `${current.text} SELECT strftime(order_date, '%Y-%m') AS month, SUM(revenue) AS revenue FROM filtered
+          WHERE order_date < LEAST(${ends.join(", ")}) GROUP BY 1 ORDER BY 1`,
+        values: [...current.values, ...(until ? [until] : [])],
+      };
+    },
+  };
+}
+
+export const queries = {
+  summary: summary(),
   monthly: query(
     "Monthly sales by channel",
     `SELECT strftime(order_date, '%Y-%m') AS month,
     SUM(CASE WHEN channel = 'Online' THEN revenue ELSE 0 END) AS online,
     SUM(CASE WHEN channel = 'Store' THEN revenue ELSE 0 END) AS store,
+    SUM(revenue) AS revenue,
     COUNT(DISTINCT order_number) AS orders
     FROM filtered GROUP BY 1 ORDER BY 1`,
   ),
+  monthly_complete: monthlyComplete(),
   brands: query(
     "Revenue by brand",
     `SELECT brand, SUM(revenue) AS revenue FROM filtered GROUP BY 1 ORDER BY revenue DESC`,

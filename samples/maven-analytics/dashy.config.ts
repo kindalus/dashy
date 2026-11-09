@@ -8,8 +8,10 @@ import { filters, queries } from "./queries";
 
 const usd: Format = { style: "currency", currency: "USD", decimals: 0 };
 const percent: Format = { style: "percent", decimals: 1 };
-const revenue = { key: "revenue", label: "Revenue (USD)", format: usd };
-const profit = { key: "profit", label: "Gross profit (USD)", format: usd };
+// `aggregate` tells totals, subtotals and Top N's "Other" row how to combine a column.
+const revenue = { key: "revenue", label: "Revenue (USD)", format: usd, aggregate: "sum" } as const;
+const profit = { key: "profit", label: "Gross profit (USD)", format: usd, aggregate: "sum" } as const;
+const units = { key: "units", label: "Units", aggregate: "sum" } as const;
 // Columns declare which parameter their values belong to; dashboards decide what a click does.
 const category = { key: "category", label: "Category", param: "category" };
 const brand = { key: "brand", label: "Brand", param: "brand" };
@@ -42,6 +44,10 @@ const metrics: Record<string, MetricDefinition> = Object.fromEntries(
     { label, query: "summary", column, format },
   ]),
 );
+// Compare with the period just before the selected one (see the summary query).
+for (const column of ["revenue", "profit", "orders"])
+  metrics[column] = { ...metrics[column]!, compare: { column: `previous_${column}`, label: "vs previous period" } };
+metrics.revenue = { ...metrics.revenue!, sparkline: { dataset: "revenue_forecast", value: "revenue" } };
 
 export default defineProject({
   name: "Maven Electronics",
@@ -140,11 +146,28 @@ export default defineProject({
         ],
       },
     },
+    revenue_forecast: {
+      label: "Revenue trend and forecast",
+      description:
+        "Monthly revenue with its average, linear trend and a six-month linear forecast. Complete months only.",
+      query: "monthly_complete",
+      columns: [{ key: "month", label: "Month" }, revenue],
+      chart: {
+        type: "line",
+        x: "month",
+        series: [{
+          ...revenue,
+          reference: [{ kind: "average" }],
+          trend: "linear",
+          forecast: { periods: 6 },
+        }],
+      },
+    },
     categories: {
       label: "Sales by category",
       description: "Click a category to filter the dashboard.",
       query: "categories",
-      columns: [category, revenue, profit, { key: "units", label: "Units" }],
+      columns: [category, revenue, profit, units],
       chart: { type: "bar", x: "category", series: [revenue, profit] },
     },
     category_mix: {
@@ -155,16 +178,20 @@ export default defineProject({
     },
     brands: {
       label: "Revenue by brand",
+      description: "Choose how many of the top brands to show.",
       query: "brands",
       columns: [brand, revenue],
       chart: { type: "funnel", category: "brand", value: "revenue", format: usd },
+      topN: { by: "revenue", options: [3, 5, 8], default: 5 },
     },
     category_brands: {
       label: "Categories and brands",
-      description: "Treemap: click a brand or a category.",
+      description: "Treemap: click a brand or a category. The table view adds subtotals per category.",
       query: "category_brands",
       columns: [category, brand, revenue],
       chart: { type: "treemap", path: ["category", "brand"], value: "revenue", format: usd },
+      subtotals: ["category"],
+      totals: true,
     },
     category_brands_sunburst: {
       label: "Categories and brands (sunburst)",
@@ -234,21 +261,28 @@ export default defineProject({
         { key: "product", label: "Product", param: "productName" },
         brand,
         category,
-        { key: "units", label: "Units" },
+        units,
         revenue,
         profit,
-        { key: "margin", label: "Margin", format: percent },
+        // A ratio of sums: the total margin is total profit over total revenue.
+        { key: "margin", label: "Margin", format: percent, aggregate: { ratio: ["profit", "revenue"] } },
       ],
+      totals: true,
+      defaultSort: { column: "revenue", direction: "desc" },
     },
     countries: {
       label: "Sales by customer country",
+      description: "Top countries by revenue; the rest are combined into Other.",
       query: "countries",
       columns: [
         { key: "country", label: "Country", param: "country" },
-        { key: "customers", label: "Customers" },
-        { key: "orders", label: "Orders" },
+        // Each customer and order belongs to one country, so the counts add up.
+        { key: "customers", label: "Customers", aggregate: "sum" },
+        { key: "orders", label: "Orders", aggregate: "sum" },
         revenue,
       ],
+      topN: { by: "revenue", options: [3, 5], default: 5, other: true },
+      totals: true,
       chart: { type: "bar", x: "country", orientation: "horizontal", series: [revenue] },
     },
     stores: {
@@ -415,6 +449,7 @@ export default defineProject({
         metric("orders"),
         metric("units"),
         dataset("monthly"),
+        dataset("revenue_forecast"),
         dataset("stores", 12, "table"),
       ],
     },

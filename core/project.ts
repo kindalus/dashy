@@ -6,6 +6,7 @@ import { isValidTimezone, relativeDefaultError } from "./dates.ts";
 import { isReservedParam } from "./params.ts";
 import { resolveLimits, parseBytes } from "./limits.ts";
 import { validateChart } from "./charts.ts";
+import { validateTable } from "./tables.ts";
 
 export function defineProject<const T extends ProjectDefinition>(
   project: T,
@@ -108,11 +109,41 @@ export function defineProject<const T extends ProjectDefinition>(
       `${name} has invalid maxRows`,
     );
   }
-  for (const [name, metric] of Object.entries(project.metrics))
+  const text = (value: unknown) => value === undefined || (typeof value === "string" && value.trim().length > 0);
+  for (const [name, metric] of Object.entries(project.metrics)) {
     assert(
       Object.hasOwn(project.queries, metric.query),
       `${name} references unknown query ${metric.query}`,
     );
+    // Configs are plain JavaScript at runtime, so check shapes rather than trust the types.
+    const compare: unknown = metric.compare;
+    if (compare !== undefined) {
+      const c = (typeof compare === "object" && compare !== null ? compare : {}) as Record<string, unknown>;
+      assert(typeof c.column === "string" && c.column, `${name} compare requires a column`);
+      assert(c.as === undefined || c.as === "percent" || c.as === "delta", `${name} compare as must be percent or delta`);
+      assert(c.better === undefined || c.better === "higher" || c.better === "lower", `${name} compare better must be higher or lower`);
+      assert(text(c.label), `${name} compare label must be a non-empty string`);
+    }
+    const target: unknown = metric.target;
+    if (target !== undefined) {
+      const t = (typeof target === "object" && target !== null ? target : {}) as Record<string, unknown>;
+      assert((typeof t.column === "string" && t.column.length > 0) !== (t.value !== undefined),
+        `${name} target requires either a column or a value`);
+      assert(t.value === undefined || Number.isFinite(t.value), `${name} target value must be a finite number`);
+      assert(text(t.label), `${name} target label must be a non-empty string`);
+    }
+    const sparkline: unknown = metric.sparkline;
+    if (sparkline !== undefined) {
+      const s = (typeof sparkline === "object" && sparkline !== null ? sparkline : {}) as Record<string, unknown>;
+      const dataset = typeof s.dataset === "string" && Object.hasOwn(project.datasets, s.dataset) ? project.datasets[s.dataset]! : undefined;
+      assert(dataset, `${name} sparkline references unknown dataset ${String(s.dataset)}`);
+      assert(dataset!.columns.some((column) => column.key === s.value), `${name} sparkline value must be a column of ${String(s.dataset)}`);
+      // Whatever filters reach the metric must reach its sparkline too.
+      const accepted = project.queries[dataset!.query]?.params ?? [];
+      const missing = (project.queries[metric.query]?.params ?? []).filter((param) => !accepted.includes(param));
+      assert(!missing.length, `${name} sparkline query ${dataset!.query} must accept ${missing.join(", ")} like ${metric.query}`);
+    }
+  }
   for (const [name, dataset] of Object.entries(project.datasets)) {
     assert(
       Object.hasOwn(project.queries, dataset.query),
@@ -127,6 +158,8 @@ export function defineProject<const T extends ProjectDefinition>(
       const error = validateChart(dataset.chart, columns);
       assert(!error, `${name} chart ${error}`);
     }
+    const tableError = validateTable(dataset);
+    assert(!tableError, `${name} ${tableError}`);
     for (const column of dataset.columns) {
       if (column.param === undefined) continue;
       const target = typeof column.param === "string" ? { name: column.param, from: column.key } : column.param;

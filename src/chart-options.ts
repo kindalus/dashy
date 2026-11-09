@@ -2,6 +2,8 @@
 import { boxplotStats, isCartesian, seriesKind } from "../core/charts";
 import type { ChartDefinition, DatasetDefinition, Format, QueryResult, Row, Scalar } from "../core/types";
 import { formatValue } from "./format";
+import { buildAnalytics } from "./chart-analytics";
+import { isOtherRow } from "../core/tables";
 
 export interface ChartTheme {
   palette: string[];
@@ -25,12 +27,14 @@ export interface ChartEvent {
 }
 export type ChartModule =
   | "line" | "bar" | "scatter" | "pie" | "funnel" | "treemap" | "sunburst"
-  | "heatmap" | "gauge" | "radar" | "sankey" | "boxplot" | "visualMap";
+  | "heatmap" | "gauge" | "radar" | "sankey" | "boxplot" | "visualMap" | "markLine";
 export interface BuiltChart {
   option: Record<string, unknown>;
   modules: ChartModule[];
   /** Full or partial row identified by a click, or undefined. */
   rowAt(event: ChartEvent): Row | undefined;
+  /** Explanations shown under the chart, e.g. why a forecast could not be drawn. */
+  notes?: string[];
 }
 /** Returns true for rows matching the active cross-filter, or undefined without one. */
 export type Selection = ((row: Row) => boolean) | undefined;
@@ -88,6 +92,12 @@ export function buildChart(
     const leftFormat = chart.series.find((s) => s.axis !== "right")?.format;
     const rightFormat = chart.series.find((s) => s.axis === "right")?.format;
     const kinds = chart.series.map((s) => seriesKind(chart, s));
+    const colors = chart.series.map((s, i) => s.color || palette(i));
+    const analytics = buildAnalytics({
+      // Top N's synthetic Other row (always last) is not a data point for statistics.
+      rows: rows.filter((row) => !isOtherRow(row)), x: chart.x, xType, horizontal, series: chart.series, colors, locale, muted: theme.muted,
+      axisIndex: (s) => (right && !horizontal ? (s.axis === "right" ? 1 : 0) : undefined),
+    });
     const valueAxis = (format: Format | undefined, position?: "left" | "right") => ({
       type: "value",
       ...(position ? { position } : {}),
@@ -96,7 +106,7 @@ export function buildChart(
     });
     const categoryAxis = {
       type: xType,
-      ...(xType === "category" ? { data: rows.map((row) => text(row[chart.x])) } : {}),
+      ...(xType === "category" ? { data: [...rows.map((row) => text(row[chart.x])), ...analytics.future] } : {}),
       boundaryGap: xType === "category" && kinds.includes("bar"),
       axisLine: { lineStyle: { color: theme.border } },
       axisTick: { show: false },
@@ -110,18 +120,21 @@ export function buildChart(
       return style ? { value, itemStyle: style } : value;
     };
     return {
-      modules: [...new Set(kinds.map((kind) => (kind === "area" ? "line" : kind)))] as ChartModule[],
-      rowAt: byIndex,
+      modules: [...new Set([...kinds.map((kind) => (kind === "area" ? "line" : kind)),
+        ...(analytics.extra.length ? ["line"] : []), ...(analytics.markLines.some(Boolean) ? ["markLine"] : [])])] as ChartModule[],
+      // Trend and forecast series follow the real ones; clicking them selects nothing.
+      rowAt: (event) => (event.seriesIndex !== undefined && event.seriesIndex >= chart.series.length ? undefined : byIndex(event)),
+      notes: analytics.notes,
       option: {
-        ...baseOption(theme, chart.series.map((s, i) => s.color || palette(i))),
+        ...baseOption(theme, colors),
         grid: { left: 12, right: 20, top: 30, bottom: 10, outerBoundsMode: "same" },
         tooltip: { ...baseOption(theme, []).tooltip, trigger: kinds.every((k) => k === "scatter") ? "item" : "axis" },
-        legend: legend(theme, chart.series.length > 1),
+        legend: legend(theme, chart.series.length + analytics.extra.length > 1),
         [horizontal ? "yAxis" : "xAxis"]: categoryAxis,
         [horizontal ? "xAxis" : "yAxis"]: right && !horizontal
           ? [valueAxis(leftFormat, "left"), valueAxis(rightFormat, "right")]
           : valueAxis(leftFormat),
-        series: chart.series.map((series, index) => {
+        series: [...chart.series.map((series, index) => {
           const kind = kinds[index]!;
           return {
             name: series.label,
@@ -135,9 +148,10 @@ export function buildChart(
             lineStyle: { width: 2.5 },
             barMaxWidth: 56,
             ...(kind === "bar" && series.stack ? { emphasis: { focus: "series" } } : {}),
+            ...(analytics.markLines[index] ? { markLine: analytics.markLines[index] } : {}),
             tooltip: { valueFormatter: valueFormatter(series.format) },
           };
-        }),
+        }), ...analytics.extra],
       },
     };
   }

@@ -1,4 +1,5 @@
 import type { Scalar, SqlStatement } from "./types";
+import { previousRange } from "./dates";
 
 /** Values are always bound. Identifiers must come from application definitions. */
 export function identifier(value: string): string {
@@ -30,6 +31,12 @@ export const sql = {
       ? { text: `${column} BETWEEN ? AND ?`, values: [value.from, value.until] }
       : { text: "", values: [] };
   },
+  /**
+   * The range to compare a date range with: the same number of days just before
+   * (`period`, default) or the same dates a year earlier (`year`). Undefined when
+   * the range is missing or not made of dates.
+   */
+  previousRange,
   where(...parts: SqlStatement[]): SqlStatement {
     const active = parts.filter((p) => p.text);
     return {

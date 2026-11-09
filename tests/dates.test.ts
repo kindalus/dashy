@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { relativeDefaultError, resolveDefault, resolveRelativeDate, resolveRelativeRange, todayIn } from "../core/dates";
+import { previousRange, relativeDefaultError, resolveDefault, resolveRelativeDate, resolveRelativeRange, todayIn } from "../core/dates";
+import { sql } from "../core/sql";
 import { parseParams, readParams, reservedParams } from "../core/params";
 import type { ParamDefinition } from "../core/types";
 
@@ -76,9 +77,31 @@ describe("parameters", () => {
     expect(parseParams(definitions, ["client", "kind"], { client: "500123", kind: "any" })).toEqual({ client: "500123", kind: "any" });
   });
   test("reserved query keys never reach parameter validation", () => {
-    expect(reservedParams).toEqual(["api_key", "refresh", "_from", "_xf"]);
+    expect(reservedParams).toEqual(["api_key", "refresh", "_from", "_xf", "_format", "_sort", "_top"]);
     const raw = readParams(new URLSearchParams("api_key=secret&refresh=true&_from=/dashboards/a&_xf=b:c&year=2026"), definitions);
     expect(raw).toEqual({ year: "2026" });
     expect(parseParams(definitions, ["year"], raw)).toEqual({ year: 2026 });
+  });
+});
+
+describe("previous ranges", () => {
+  test("period is the same number of days immediately before; year shifts the dates", () => {
+    // Whole calendar months compare with the same number of months before.
+    expect(previousRange({ from: "2026-03-01", until: "2026-03-31" })).toEqual({ from: "2026-02-01", until: "2026-02-28" });
+    expect(previousRange({ from: "2020-01-01", until: "2020-12-31" })).toEqual({ from: "2019-01-01", until: "2019-12-31" });
+    expect(previousRange({ from: "2026-04-01", until: "2026-06-30" })).toEqual({ from: "2026-01-01", until: "2026-03-31" });
+    expect(previousRange({ from: "2026-01-01", until: "2026-01-31" })).toEqual({ from: "2025-12-01", until: "2025-12-31" });
+    // Other ranges compare with the same number of days before.
+    expect(previousRange({ from: "2026-03-10", until: "2026-03-31" })).toEqual({ from: "2026-02-16", until: "2026-03-09" });
+    expect(previousRange({ from: "2026-03-01", until: "2026-03-15" })).toEqual({ from: "2026-02-14", until: "2026-02-28" });
+    expect(previousRange({ from: "2026-01-01", until: "2026-01-01" })).toEqual({ from: "2025-12-31", until: "2025-12-31" });
+    expect(previousRange({ from: "2024-02-01", until: "2024-02-29" }, "year")).toEqual({ from: "2023-02-01", until: "2023-02-28" });
+    expect(sql.previousRange({ from: "2026-01-01", until: "2026-12-31" }, "year")).toEqual({ from: "2025-01-01", until: "2025-12-31" });
+  });
+  test("missing, non-date, invalid or reversed ranges have none", () => {
+    expect(previousRange(undefined)).toBeUndefined();
+    expect(previousRange({ from: 1, until: 5 })).toBeUndefined();
+    expect(previousRange({ from: "2026-02-30", until: "2026-03-01" })).toBeUndefined();
+    expect(previousRange({ from: "2026-03-02", until: "2026-03-01" })).toBeUndefined();
   });
 });

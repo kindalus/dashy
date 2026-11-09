@@ -2,7 +2,7 @@ import type { ParamDefault, ParamDefinition, Params, ParamValue, Scalar } from "
 import { resolveDefault } from "./dates.ts";
 
 /** Query keys handled by the engine itself, never validated as project parameters. */
-export const reservedParams = ["api_key", "refresh", "_from", "_xf"] as const;
+export const reservedParams = ["api_key", "refresh", "_from", "_xf", "_format", "_sort", "_top"] as const;
 const reserved = new Set<string>(reservedParams);
 export const isReservedParam = (name: string) => reserved.has(name);
 export const hasQueryOptions = (def: ParamDefinition) =>

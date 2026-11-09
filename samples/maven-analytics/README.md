@@ -15,6 +15,22 @@ They demonstrate joins, shared queries, metrics, line and bar charts with multip
 series, reusable datasets, date ranges, select/string/number/boolean parameters,
 currency and percentage formatting, and paginated tables.
 
+Table features: Products shows a total row with a ratio margin and sorts by revenue
+by default; the Categories and brands table view adds subtotals per category; the
+gallery's brand funnel has a Top N selector; Sales by customer country (Customers
+dashboard) keeps the top countries and combines the rest into an Other row.
+
+Metric comparisons: the summary query also totals the period just before the
+selected one with `sql.previousRange`, so Revenue, Gross profit and Orders show the
+change, and Revenue draws a monthly sparkline. With the default full range there
+is no earlier data, so no change is shown; pick a year to see it.
+
+Chart analytics: Stores shows monthly revenue with an average reference line, a
+linear trend and a six-month linear forecast. Its query leaves out an incomplete
+last month, whether the selected period or the data (which ends on 2021-02-20)
+stops mid-month, because it would drag the forecast down. Filtering to a selection with a
+month without sales shows why no forecast is drawn.
+
 ## Custom pages
 
 The **Custom pages** navigation group contains two Solid pages:

@@ -150,6 +150,8 @@ The browser receives presentation definitions and query results. It does not rec
 
 Clicking a value whose column declares a parameter cross-filters the dashboard or opens a drillthrough destination. Dashboards declare the parameter they detail, so datasets never reference pages. Thirteen chart types are available: cartesian lines, bars, areas, stacks, dual axes and scatter, plus pie, funnel, treemap, sunburst, heatmap, gauge, radar, sankey and boxplot.
 
+Tables sort by any column and can add totals, nested subtotals and a Top N selector with an optional "Other" row, all driven by per-column aggregates. See [sorting, totals, subtotals and Top N](docs/contracts.md#sorting-totals-subtotals-and-top-n). Every dataset block downloads as CSV or Excel, exactly as shown; see [export](docs/contracts.md#export). Cartesian series can add reference lines, a linear trend and a client-side forecast; see [reference lines, trends and forecasts](docs/contracts.md#reference-lines-trends-and-forecasts). Metric cards can compare with another period, show progress towards a target and draw a sparkline; see [comparison, target and sparkline](docs/contracts.md#comparison-target-and-sparkline). Charts save as PNG or SVG, and every dashboard prints or saves as PDF; see [images and printing](docs/contracts.md#images-and-printing).
+
 See [contracts and examples](docs/contracts.md), [source adapters](docs/sources.md), [authentication](docs/auth.md), [container deployment](docs/deployment.md), and [migration notes](docs/migration.md).
 
 ## Layout
@@ -213,6 +215,7 @@ Custom routes under `/api/custom/` can declare additional methods:
 /api/dashboards/:name
 /api/dashboard-shell/:name
 /api/dashboard-data/:dashboard/:request
+/api/dashboard-export/:dashboard/:block  ?_format=csv|xlsx &_sort= &_top=
 /api/metrics/:name
 /api/datasets/:name
 /api/queries/:name
@@ -220,7 +223,7 @@ Custom routes under `/api/custom/` can declare additional methods:
 /healthz
 ```
 
-Ranges use `?period.from=2026-01-01&period.until=2026-06-30`. Arrays use repeated keys. Unknown parameters are rejected; `api_key`, `refresh`, `_from` and `_xf` are reserved for the engine. `refresh=true` bypasses the result cache. Cross-filter origins travel as `_xf=<block>:<param>`. Responses are not cached by shared HTTP caches. Within one dashboard request, a query used by several blocks runs once.
+Ranges use `?period.from=2026-01-01&period.until=2026-06-30`. Arrays use repeated keys. Unknown parameters are rejected; `api_key`, `refresh`, `_from`, `_xf`, `_format`, `_sort` and `_top` are reserved for the engine. `refresh=true` bypasses the result cache. Cross-filter origins travel as `_xf=<block>:<param>`. Responses are not cached by shared HTTP caches. Within one dashboard request, a query used by several blocks runs once.
 
 The initial page includes request IDs and their consuming block IDs. A
 `dashboard-data` request returns only that group's blocks and a timestamp; it

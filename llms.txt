@@ -226,7 +226,7 @@ Defaults relativos são avaliados em cada pedido, no `timezone` do projeto (por 
 
 Opções podem vir de uma query: `options: { query: "client_options", value: "id", label: "name", search: true }`. A query de opções pode aceitar outros parâmetros (por exemplo marcas filtradas pela categoria), mas não o próprio. `search: true` mostra um autocomplete com pesquisa no servidor; sem `search`, arrays mostram um multiselect. Os valores são validados pelo tipo e ligados ao SQL; `strict: true` confirma que existem nas opções antes de qualquer query de dados. Endpoint: `GET /api/params/:nome/options?_q=&_value=&_limit=`.
 
-`api_key`, `refresh`, `_from` e `_xf` são chaves reservadas do motor e não podem ser nomes de parâmetros.
+`api_key`, `refresh`, `_from`, `_xf`, `_format`, `_sort` e `_top` são chaves reservadas do motor e não podem ser nomes de parâmetros.
 
 Exemplos HTTP:
 
@@ -262,6 +262,8 @@ Limites atuais:
 
 ## Apresentação, navegação e temas
 
+Uma métrica pode declarar `compare: { column, label?, as?: "percent" | "delta", better?: "higher" | "lower" }` (outra coluna da mesma linha, por exemplo o período anterior, calculado em SQL com `sql.previousRange(period, "period" | "year")`; meses completos comparam com os meses anteriores, outros intervalos com o mesmo número de dias), `target: { column } | { value }` e `sparkline: { dataset, value }`. Ver [comparação, alvo e sparkline](docs/contracts.md#comparison-target-and-sparkline).
+
 Uma métrica exige uma query com no máximo uma linha e a coluna indicada. Uma coluna inexistente, múltiplas linhas ou um resultado truncado são erros. Sem linhas ou com SQL NULL, apresenta `—`; usar `COALESCE` quando a regra de negócio exige zero.
 
 Um dataset declara as colunas visíveis. Essa seleção controla a apresentação; a API pode devolver todas as colunas da query. Selecionar no SQL apenas os dados que podem ser expostos. `chart` é opcional; sem ele, apresenta uma tabela. Tipos: `cartesian` (séries com `as` `line`/`bar`/`area`/`scatter`, `axis` `left`/`right`, `stack`, `orientation: "horizontal"`, `xType`), os atalhos `line`, `bar` e `area`, e ainda `pie` (com `donut`), `funnel`, `treemap`/`sunburst` (`path`), `heatmap` (`x`, `y`, `value`), `gauge` (`min`, `max`, `bands`), `radar`, `sankey` (`source`, `target`) e `boxplot` (valores brutos). Todos permitem alternar para tabela e são validados no arranque. Ver [tipos de gráfico](docs/contracts.md#chart-types).
@@ -271,6 +273,10 @@ Uma coluna pode declarar a que parâmetro pertencem os seus valores: `{ key: "ca
 - **Cross-filter:** se o parâmetro for filtro do dashboard, clicar no valor define esse filtro (barra de filtros e URL actualizados, `_xf=<bloco>:<param>`). O bloco clicado mantém todos os valores e destaca a seleção; clicar de novo limpa.
 - **Drillthrough:** um dashboard declara `drillthrough: { param: "client", keepFilters: true }` e, normalmente, `required: ["client"]`. Qualquer valor desse parâmetro noutro dashboard abre-o, levando os filtros que o destino aceita e `_from` para o link de regresso. Vários destinos aparecem num menu; destinos sem permissão nunca aparecem. `drillthroughTargets: { sku: "stock-explorer", client: false }` muda os destinos num dashboard, sem tocar nos datasets.
 - Com uma só acção, o clique executa-a; com várias, abre um menu junto ao valor (rato, toque e teclado). A tabela pagina oito linhas de cada vez no browser; isso não altera o limite de linhas devolvido pela query.
+
+As tabelas ordenam por qualquer coluna (clique no cabeçalho; `defaultSort: { column, direction }` define a ordem inicial). `aggregate` numa coluna (`sum`, `count`, `min`, `max`, `avg` ou `{ ratio: [numerador, denominador] }`) alimenta `totals: true` (linha de total), `subtotals: ["coluna", ...]` (grupos com subtotal) e a linha "Other" de `topN: { by, options?, default?, order?, other?, otherLabel?, label? }`, que acrescenta um selector Top N à tabela e ao gráfico. Usar `ratio` para margens. `topN` não se combina com `subtotals`; `other` exige agregado em `by` e um gráfico pie, funnel, radar ou cartesiano de categorias (ou nenhum). Resultados truncados não têm totais, subtotais nem Top N. Ver [ordenação, totais, subtotais e Top N](docs/contracts.md#sorting-totals-subtotals-and-top-n).
+
+Séries cartesianas aceitam `reference: [{ kind: "average" | "median" | "min" | "max" | "constant", value?, label? }]`, `trend: "linear"` e `forecast: { periods, method?: "linear" | "holt" | "seasonal", season? }`, calculados no browser. A projecção exige datas igualmente espaçadas no eixo x (`YYYY`, `YYYY-MM`, `YYYY-Qn` ou `YYYY-MM-DD`) e um valor em cada período; caso contrário, o gráfico mostra uma nota. Não se aplicam a séries empilhadas e não aparecem na tabela, no export nem na API. Ver [linhas de referência, tendências e projecções](docs/contracts.md#reference-lines-trends-and-forecasts).
 
 Os formatos são `number`, `currency`, `percent`, `text` e `date`, com `decimals` opcional. Configurar o formato da coluna para tabelas e o da série para os valores do tooltip. Percentagens usam frações: `0.25` corresponde a 25%. `currency` define explicitamente a moeda, por exemplo `AOA`, `EUR` ou `USD`; se o estilo for `currency` e a moeda estiver omitida, usa USD. `locale` controla a apresentação, não converte moedas nem traduz os textos da interface. A formatação de datas usa UTC.
 
@@ -295,6 +301,7 @@ Endpoints GET:
 /api/dashboards/:name
 /api/dashboard-shell/:name
 /api/dashboard-data/:dashboard/:request
+/api/dashboard-export/:dashboard/:block
 /api/queries/:name
 /api/metrics/:name
 /api/datasets/:name
@@ -302,7 +309,7 @@ Endpoints GET:
 /healthz
 ```
 
-O catálogo contém metadados de apresentação, o `timezone` e os datasets legíveis com os parâmetros aceites e as anotações `param` das colunas, para que agentes encadeiem datasets. Queries e datasets devolvem `{ columns, rows, truncated, durationMs }`; métricas devolvem `{ value }`; o endpoint agregado de dashboard inclui definição, parâmetros, blocos e `generatedAt`. O endpoint independente devolve `{ blocks, generatedAt }`. Os IDs `:request` vêm do plano `dashboard.requests` incluído no HTML, não são nomes arbitrários de datasets.
+O catálogo contém metadados de apresentação, o `timezone` e os datasets legíveis com os parâmetros aceites e as anotações `param` das colunas, para que agentes encadeiem datasets. Queries e datasets devolvem `{ columns, rows, truncated, durationMs }`; métricas devolvem `{ value }`; o endpoint agregado de dashboard inclui definição, parâmetros, blocos e `generatedAt`. O endpoint independente devolve `{ blocks, generatedAt }`. Na vista de gráfico, o menu Download também guarda PNG ou SVG com título e filtros, gerados no browser; "Print / PDF" imprime o dashboard (tabelas com todas as linhas). Ver [imagens e impressão](docs/contracts.md#images-and-printing). `/api/dashboard-export/:dashboard/:block` descarrega um bloco dataset tal como aparece (filtros, `_xf`, `_sort=<coluna>:asc|desc`, `_top=<n>`) em CSV ou Excel (`_format=csv|xlsx`); ver [export](docs/contracts.md#export). Os IDs `:request` vêm do plano `dashboard.requests` incluído no HTML, não são nomes arbitrários de datasets.
 
 O endpoint agregado executa as queries sequencialmente numa sessão e reutiliza fontes montadas. Os pedidos independentes do browser não partilham conexões. A cache de resultados é opcional: `cache: { ttlSeconds: 600, maxBytes: "64MB" }` no projeto e `cache: false | { ttlSeconds }` por query. As permissões são verificadas antes de cada leitura da cache; pedidos idênticos simultâneos partilham uma execução; erros não ficam em cache; Refresh envia `refresh=true` e volta a ler as fontes. As respostas HTTP usam `Cache-Control: no-store`.
 

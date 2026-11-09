@@ -117,4 +117,23 @@ describe("parameters, sources, limits and charts", () => {
     chartCase({ type: "cartesian", x: "name", series: [{ key: "value", label: "V", as: "donut" as never }] }, "as must be line, bar, area or scatter");
     chartCase({ type: "spiral" } as never, "type must be one of");
   });
+  test("table options are validated at startup with the dataset name", () => {
+    invalid((p) => { p.datasets.by_client!.totals = true; }, "by_client totals require at least one column aggregate");
+    invalid((p) => { p.datasets.by_client!.topN = { by: "missing" }; }, "by_client topN by references unknown column missing");
+  });
+});
+
+describe("metric comparisons", () => {
+  const metricCase = (extra: Record<string, unknown>, message: string) =>
+    invalid((p) => { Object.assign(p.metrics.total!, extra); }, message);
+  test("compare, target and sparkline are validated at startup", () => {
+    metricCase({ compare: {} }, "total compare requires a column");
+    metricCase({ compare: { column: "p", as: "ratio" } }, "total compare as must be percent or delta");
+    metricCase({ compare: { column: "p", better: "more" } }, "total compare better must be higher or lower");
+    metricCase({ target: {} }, "total target requires either a column or a value");
+    metricCase({ target: { column: "g", value: 3 } }, "total target requires either a column or a value");
+    metricCase({ target: { value: Number.NaN } }, "total target value must be a finite number");
+    metricCase({ sparkline: { dataset: "nope", value: "x" } }, "total sparkline references unknown dataset nope");
+    metricCase({ sparkline: { dataset: "by_client", value: "x" } }, "total sparkline value must be a column of by_client");
+  });
 });

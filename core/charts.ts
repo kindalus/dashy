@@ -28,6 +28,38 @@ export function chartKeyColumns(chart: ChartDefinition): string[] {
   }
 }
 
+const REFERENCE_KINDS = ["average", "median", "min", "max", "constant"];
+const FORECAST_METHODS = ["linear", "holt", "seasonal"];
+/** Reference lines, trend and forecast options of one cartesian series. */
+function validateAnalytics(chart: Cartesian, series: CartesianSeries): string | undefined {
+  const reference: unknown = series.reference;
+  if (reference !== undefined) {
+    if (!Array.isArray(reference)) return "reference must be a list of { kind, value?, label? }";
+    for (const line of reference as unknown[]) {
+      const item = (typeof line === "object" && line !== null ? line : {}) as Record<string, unknown>;
+      if (!REFERENCE_KINDS.includes(item.kind as string)) return "reference kind must be average, median, min, max or constant";
+      if (item.kind === "constant" && !Number.isFinite(item.value)) return "constant reference requires a finite value";
+      if (item.label !== undefined && (typeof item.label !== "string" || !item.label.trim())) return "reference label must be a non-empty string";
+    }
+  }
+  if (series.reference !== undefined && series.stack) return "reference cannot be used on a stacked series";
+  if (series.trend !== undefined && series.trend !== "linear") return "trend must be linear";
+  if (series.trend && series.stack) return "trend cannot be used on a stacked series";
+  const forecast: unknown = series.forecast;
+  if (forecast === undefined) return undefined;
+  if (typeof forecast !== "object" || forecast === null) return "forecast must be { periods, method?, season? }";
+  const { periods, method = "linear", season } = forecast as Record<string, unknown>;
+  if (!Number.isInteger(periods) || (periods as number) < 1 || (periods as number) > 120) return "forecast periods must be an integer from 1 to 120";
+  if (!FORECAST_METHODS.includes(method as string)) return "forecast method must be linear, holt or seasonal";
+  if (method === "seasonal" && (!Number.isInteger(season) || (season as number) < 2 || (season as number) > 366))
+    return "seasonal forecast requires a season of 2 to 366 periods";
+  if (method !== "seasonal" && season !== undefined) return "forecast season applies only to the seasonal method";
+  if (series.stack) return "forecast cannot be used on a stacked series";
+  if (chart.orientation === "horizontal") return "forecast requires a vertical chart";
+  if (chart.xType === "value") return "forecast requires a category or time x axis of dates";
+  return undefined;
+}
+
 /** Returns an error message, or undefined when the chart matches its columns. */
 export function validateChart(chart: ChartDefinition, columns: readonly string[]): string | undefined {
   if (!chart || !(chartTypes as readonly string[]).includes(chart.type)) return `type must be one of ${chartTypes.join(", ")}`;
@@ -43,6 +75,8 @@ export function validateChart(chart: ChartDefinition, columns: readonly string[]
       if (series.as !== undefined && !seriesKinds.includes(series.as)) return `series ${series.key} as must be line, bar, area or scatter`;
       if (series.axis !== undefined && !["left", "right"].includes(series.axis)) return `series ${series.key} axis must be left or right`;
       if (series.stack !== undefined && (typeof series.stack !== "string" || !series.stack)) return `series ${series.key} stack must be a name`;
+      const error = validateAnalytics(chart, series);
+      if (error) return `series ${series.key} ${error}`;
     }
     if (chart.orientation === "horizontal" && chart.series.some((s) => s.axis === "right"))
       return "horizontal charts support only the left value axis";

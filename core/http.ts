@@ -1,5 +1,6 @@
 import { createCustomApiHandler } from "./custom-api";
 import { DashyEngine, readCrossFilters } from "./engine";
+import { exportFile, readExportOptions } from "./export";
 import { DashyError, isDashyError, readParams } from "./params";
 import type { AuthResult, Principal } from "./types";
 
@@ -138,7 +139,7 @@ export function createApiHandler(engine: DashyEngine) {
           limit: limit === null ? undefined : Number(limit),
         }, principal, request.signal, { refresh });
       } else {
-        const independent = parts[1] === "dashboard-data" && parts.length === 4;
+        const independent = (parts[1] === "dashboard-data" || parts[1] === "dashboard-export") && parts.length === 4;
         if ((!independent && parts.length !== 3) || parts[0] !== "api")
           throw new DashyError("Endpoint not found", 404);
         const params = readParams(url.searchParams, engine.project.params);
@@ -149,6 +150,28 @@ export function createApiHandler(engine: DashyEngine) {
           if (independent) group = decodeURIComponent(parts[3]!);
         } catch {
           throw new DashyError("Invalid endpoint name");
+        }
+        if (parts[1] === "dashboard-export" && independent) {
+          let options: ReturnType<typeof readExportOptions> | undefined;
+          const block = await engine.dashboardBlock(name, group, params, principal, request.signal, { refresh, crossFilters },
+            (definition) => { options = readExportOptions(url.searchParams, definition); });
+          const dashboard = block.shell.definition;
+          const file = await exportFile({
+            dashboardId: name, dashboardLabel: dashboard.label, blockId: group,
+            definition: block.definition, result: block.result,
+            filters: block.shell.params, filterNames: dashboard.params ?? [],
+            ignored: [
+              ...block.shell.crossFilters.filter((origin) => origin.block === group).map((origin) => origin.param),
+              ...(dashboard.unfiltered?.[group] ?? []),
+            ],
+            params: engine.project.params, generatedAt: new Date(),
+            locale: engine.project.locale ?? "pt",
+            options: options!,
+          });
+          const headers = new Headers(responseHeaders);
+          headers.set("Content-Type", file.contentType);
+          headers.set("Content-Disposition", `attachment; filename="${file.filename}"`);
+          return withHeaders(new Response(file.body, { headers }), auth.headers);
         }
         if (parts[1] === "dashboard-shell")
           result = engine.dashboardShell(name, params, principal, { crossFilters });

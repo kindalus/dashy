@@ -19,6 +19,7 @@ import type {
   QueryResult,
   PageShell,
   Row,
+  TableSort,
 } from "../core/types";
 import { Chart } from "./chart";
 import { formatValue } from "./format";
@@ -32,10 +33,15 @@ import {
 } from "./dashboard-loader";
 import { ParameterControl } from "./controls";
 import {
-  actionsFor, applyAction, backLink, chartColumns, columnTarget, drillthroughTargets, isSelected,
+  actionsFor, applyAction, backLink, chartColumns, columnTarget, drillthroughTargets, selectionFor,
   type ActionContext, type ClickAction,
 } from "./actions";
 import { chartKeyColumns } from "../core/charts";
+import { applyTopN, isOtherRow, labelColumn, shapeTable, summaryLabel, topNChoices, type TableRow } from "../core/tables";
+import { compareMetric, sparklinePaths, targetProgress } from "./metric-compare";
+import { describeFilters, filterValue } from "../core/filters";
+import { installPrint, printing } from "./print";
+import type { ChartSnapshot } from "./chart";
 
 export interface AppProps {
   catalog: Catalog;
@@ -65,6 +71,12 @@ export interface BlockInteraction {
   columns: (definition: DatasetDefinition) => DatasetColumn[];
   select: (definition: DatasetDefinition, column: DatasetColumn, row: Row, event?: MouseEvent | KeyboardEvent) => void;
   selection: (definition: DatasetDefinition) => ((row: Row) => boolean) | undefined;
+  /** Download URL for this block as shown: filters, cross-filters, sort and Top N choice. */
+  exportHref: (format: "csv" | "xlsx", sort: TableSort | undefined, top: number | undefined) => string | undefined;
+  /** The filters this block applies, as one line for image captions. */
+  caption: () => string;
+  /** File name stem for images: dashboard and block. */
+  filename: () => string;
 }
 
 function DashboardContent(props: AppProps) {
@@ -142,6 +154,7 @@ function DashboardContent(props: AppProps) {
     }
   }
   onSettled(() => {
+    installPrint();
     fromParam = new URLSearchParams(location.search).get("_from");
     setFrom(fromParam);
     const current = shell();
@@ -199,14 +212,43 @@ function DashboardContent(props: AppProps) {
     },
     selection: (dataset) => {
       const current = shell();
-      const origin = current?.crossFilters.find((o) => o.block === blockId);
-      if (!current || !origin) return undefined;
-      const column = dataset.columns.find((c) => columnTarget(c)?.name === origin.param);
-      const target = column && columnTarget(column);
-      if (!target) return undefined;
-      return (row: Row) => isSelected(current.params, origin.param, row[target.from] ?? null);
+      return current ? selectionFor(current.params, current.crossFilters, blockId, dataset.columns) : undefined;
     },
+    exportHref: (format, sort, top) => {
+      const current = shell();
+      if (!current || current.missing.length) return undefined;
+      const query = search(current, current.params, current.crossFilters);
+      query.delete("_from");
+      query.set("_format", format);
+      // An empty _sort keeps the query's order; omitting it would apply defaultSort.
+      query.set("_sort", sort ? `${sort.column}:${sort.direction}` : "");
+      if (top !== undefined) query.set("_top", String(top));
+      return `/api/dashboard-export/${encodeURIComponent(current.id)}/${encodeURIComponent(blockId)}?${query}`;
+    },
+    caption: () => {
+      const current = shell();
+      if (!current) return "";
+      // Same rule as exports: the block's own cross-filters and unfiltered parameters do not apply.
+      const ignored = new Set([
+        ...current.crossFilters.filter((origin) => origin.block === blockId).map((origin) => origin.param),
+        ...(current.definition.unfiltered?.[blockId] ?? []),
+      ]);
+      // Only filters that narrow the data, so the caption stays short.
+      const set = (name: string) => filterValue(current.params[name], props.catalog.params[name]!) !== "All";
+      return describeFilters((current.definition.params ?? []).filter((name) => !ignored.has(name) && set(name)),
+        current.params, props.catalog.params);
+    },
+    filename: () => `${shell()?.id ?? "dashboard"}-${blockId}`,
   });
+  // Printed under the title: every filter, noting the blocks a cross-filter does not apply to.
+  const filterSummary = () => {
+    const current = shell();
+    if (!current) return "";
+    const notes: Record<string, string> = {};
+    for (const origin of current.crossFilters)
+      notes[origin.param] = `not applied to ${current.labels[origin.block] ?? origin.block}`;
+    return describeFilters(current.definition.params ?? [], current.params, props.catalog.params, notes);
+  };
   return (
     <>
           <Show when={back()}>
@@ -222,14 +264,20 @@ function DashboardContent(props: AppProps) {
               </p>
             </div>
             <Show when={shell() && !shell()!.missing.length}>
-              <button
-                class="button secondary"
-                onClick={() => void apply(shell()!.params, shell()!.crossFilters, true)}
-              >
-                Refresh
-              </button>
+              <div class="page-actions">
+                <button class="button secondary" onClick={() => print()}>Print / PDF</button>
+                <button
+                  class="button secondary"
+                  onClick={() => void apply(shell()!.params, shell()!.crossFilters, true)}
+                >
+                  Refresh
+                </button>
+              </div>
             </Show>
           </div>
+          <Show when={filterSummary()}>
+            <p class="print-summary">{filterSummary()}</p>
+          </Show>
           <Show when={(definition()?.params?.length || 0) > 0}>
             <form
               class="filters"
@@ -397,6 +445,38 @@ function DashboardCard(props: {
                   props.locale,
                 )}
               </div>
+              <Show when={compareMetric(block().definition, block().value, block().compare, props.locale)}>
+                {(change) => (
+                  <p class={`metric-compare tone-${change().tone}`}>
+                    <span class="metric-arrow" aria-hidden="true">
+                      {change().direction === "up" ? "▲" : change().direction === "down" ? "▼" : "▬"}
+                    </span>
+                    <span aria-hidden="true">{change().change} {change().label}</span>
+                    <span class="visually-hidden">{change().description}</span>
+                  </p>
+                )}
+              </Show>
+              <Show when={targetProgress(block().definition, block().value, block().target, props.locale)}>
+                {(goal) => (
+                  <div class="metric-target">
+                    <div class="metric-target-track" role="meter" aria-label={goal().label}
+                      aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(goal().ratio * 100)}
+                      aria-valuetext={`${goal().percent} of ${goal().label} ${goal().target}`}>
+                      <div class="metric-target-fill" style={{ width: `${goal().ratio * 100}%` }} />
+                    </div>
+                    <span aria-hidden="true">{goal().percent} of {goal().label} {goal().target}</span>
+                  </div>
+                )}
+              </Show>
+              <Show when={sparklinePaths(block().sparkline ?? [], 120, 28)}>
+                {(paths) => (
+                  <Show when={paths().length}>
+                    <svg class="metric-sparkline" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true">
+                      <For each={paths()}>{(points) => <polyline points={points} />}</For>
+                    </svg>
+                  </Show>
+                )}
+              </Show>
               <Show when={block().definition.description}>
                 <p class="metric-description">{block().definition.description}</p>
               </Show>
@@ -438,6 +518,43 @@ function DashboardCard(props: {
   );
 }
 
+const PRINT_ROWS = 2000;
+
+/** Download menu: closes after a choice, on Escape and on a click outside. */
+function ExportMenu(props: {
+  label: string;
+  href: (format: "csv" | "xlsx") => string | undefined;
+  /** Saves the visible chart; absent in table view. */
+  image?: (type: "png" | "svg") => void;
+}) {
+  let element!: HTMLDetailsElement;
+  const close = () => { element.open = false; };
+  const outside = (event: PointerEvent) => { if (!element.contains(event.target as Node)) close(); };
+  const toggle = () => {
+    if (element.open) document.addEventListener("pointerdown", outside);
+    else document.removeEventListener("pointerdown", outside);
+  };
+  onSettled(() => () => document.removeEventListener("pointerdown", outside));
+  return (
+    <details class="export-menu" ref={element} onToggle={toggle}
+      onKeyDown={(event) => { if (event.key === "Escape" && element.open) { close(); element.querySelector("summary")?.focus(); } }}>
+      <summary aria-label={`Download ${props.label}`}>Download</summary>
+      <div class="export-options" onClick={close}>
+        <a href={props.href("csv")} download>CSV</a>
+        <a href={props.href("xlsx")} download>Excel (.xlsx)</a>
+        <Show when={props.image}>
+          {(image) => (
+            <>
+              <button type="button" onClick={() => image()("png")}>Image (.png)</button>
+              <button type="button" onClick={() => image()("svg")}>Image (.svg)</button>
+            </>
+          )}
+        </Show>
+      </div>
+    </details>
+  );
+}
+
 function Dataset(props: {
   id: string;
   definition: DatasetDefinition;
@@ -452,29 +569,69 @@ function Dataset(props: {
     ),
   );
   const [page, setPage] = createSignal(0);
+  const [sort, setSort] = createSignal<TableSort | undefined>(untrack(() => props.definition.defaultSort));
+  const [limit, setLimit] = createSignal(untrack(() =>
+    props.definition.topN ? topNChoices(props.definition.topN).initial : 0));
+  const complete = () => !props.result.truncated;
+  const ranked = createMemo(() => applyTopN(props.result.rows, props.definition, limit(), complete()));
+  // Charts and tables show the same Top N rows; the table also sorts, groups and totals them.
+  const shown = createMemo(() => ranked().rows === props.result.rows
+    ? props.result : { ...props.result, rows: [...ranked().rows] });
+  const table = createMemo(() =>
+    shapeTable(ranked().rows, props.definition, sort(), props.locale, complete(), ranked().members));
   const pageSize = 8;
   const pageCount = () =>
-    Math.max(1, Math.ceil(props.result.rows.length / pageSize));
-  // Keep the selected view across refreshes, but start new results on page one.
+    Math.max(1, Math.ceil(table().rows.length / pageSize));
+  // Keep the selected view across refreshes, but start new results, orders and Top N choices on page one.
   createEffect(
-    () => props.result,
+    () => [props.result, sort(), limit()],
     () => {
       setPage(0);
     },
   );
   const currentPage = () => Math.min(page(), pageCount() - 1);
-  const pageRows = () =>
-    props.result.rows.slice(
+  // Printing shows every row up to a cap (more would freeze the page and fill hundreds
+  // of sheets); on screen, one page at a time.
+  const pageRows = () => printing() ? table().rows.slice(0, PRINT_ROWS) : table().rows.slice(
       currentPage() * pageSize,
       (currentPage() + 1) * pageSize,
     );
+  let snapshot: (() => ChartSnapshot | undefined) | undefined;
+  const [imageError, setImageError] = createSignal("");
+  const saveImage = async (type: "png" | "svg") => {
+    setImageError("");
+    try {
+      const shot = snapshot?.();
+      if (!shot) throw new Error("Chart not ready");
+      const { saveChartImage } = await import("./chart-image");
+      await saveChartImage({ ...shot, title: props.definition.label, caption: props.interaction.caption() }, type, props.interaction.filename());
+    } catch (error) {
+      console.error("[dashy] Image export failed", error);
+      setImageError("The image could not be saved. Try the other format or Print / PDF.");
+    }
+  };
+  const sortFor = (key: string) => sort()?.column === key ? sort()!.direction : undefined;
+  // Ascending, descending, then back to the query's order.
+  const cycleSort = (key: string) => setSort(
+    sortFor(key) === "asc" ? { column: key, direction: "desc" } : sortFor(key) === "desc" ? undefined : { column: key, direction: "asc" });
+  const totalLabel = () => labelColumn(props.definition);
+  // Truncated results skip what would be wrong on partial data.
+  const unavailable = () => [
+    props.definition.totals || props.definition.subtotals ? "totals" : "",
+    props.definition.topN ? "Top N" : "",
+  ].filter(Boolean).join(" and ");
   const interactive = createMemo(() => new Set(props.interaction.columns(props.definition).map((c) => c.key)));
-  const selection = createMemo(() => props.interaction.selection(props.definition));
+  // The synthetic "Other" row is never a selection, even when a real value shares its label.
+  const selection = createMemo(() => {
+    const selected = props.interaction.selection(props.definition);
+    return selected && ((row: Row) => !isOtherRow(row) && selected(row));
+  });
   const chartTargets = createMemo(() =>
     props.definition.chart
       ? chartColumns(props.definition, chartKeyColumns(props.definition.chart)).filter((c) => interactive().has(c.key))
       : []);
   const chartSelect = (row: Row, event: MouseEvent | undefined) => {
+    if (isOtherRow(row)) return;
     // The deepest identified column wins (e.g. a treemap leaf over its parent).
     const column = [...chartTargets()].reverse().find((c) => {
       const target = columnTarget(c);
@@ -491,6 +648,31 @@ function Dataset(props: {
             <p>{props.definition.description}</p>
           </Show>
         </div>
+        <div class="block-tools">
+        <Show when={imageError()}>
+          <p class="image-error" role="alert">{imageError()}</p>
+        </Show>
+        <ExportMenu label={props.definition.label}
+          href={(format) => props.interaction.exportHref(format, sort(), props.definition.topN ? limit() : undefined)}
+          image={view() === "chart" && props.definition.chart ? saveImage : undefined} />
+        <Show when={props.definition.topN}>
+          {(topN) => (
+            <label class="top-n">
+              <span class="visually-hidden">Rows shown in {props.definition.label}</span>
+              <select name={`${props.id}-top-n`} disabled={!complete()}
+                onChange={(event) => setLimit(Number(event.currentTarget.value))}>
+                <For each={topNChoices(topN()).options}>
+                  {(n) => (
+                    <option value={String(n)} selected={(complete() ? limit() : 0) === n}>
+                      {topN().order === "bottom" ? "Bottom" : "Top"} {n}
+                    </option>
+                  )}
+                </For>
+                <option value="0" selected={!complete() || limit() === 0}>All</option>
+              </select>
+            </label>
+          )}
+        </Show>
         <Show when={props.definition.chart}>
           <div
             class="view-toggle"
@@ -511,6 +693,7 @@ function Dataset(props: {
             </button>
           </div>
         </Show>
+        </div>
       </div>
       <Show
         when={props.result.rows.length}
@@ -534,19 +717,45 @@ function Dataset(props: {
                   <thead>
                     <tr>
                       <For each={props.definition.columns}>
-                        {(column) => <th scope="col">{column.label}</th>}
+                        {(column) => (
+                          <th scope="col" aria-sort={sortFor(column.key) === "asc" ? "ascending" : sortFor(column.key) === "desc" ? "descending" : undefined}>
+                            {/* Print uses plain text: Chrome repeats header rows on each page but drops button text. */}
+                            <Show when={!printing()}
+                              fallback={`${column.label}${sortFor(column.key) === "asc" ? " ▲" : sortFor(column.key) === "desc" ? " ▼" : ""}`}>
+                              <button type="button" class="sort-button" onClick={() => cycleSort(column.key)}>
+                                {column.label}
+                                <span class="sort-indicator" aria-hidden="true">
+                                  {sortFor(column.key) === "asc" ? "▲" : sortFor(column.key) === "desc" ? "▼" : ""}
+                                </span>
+                              </button>
+                            </Show>
+                          </th>
+                        )}
                       </For>
                     </tr>
                   </thead>
                   <tbody>
                     <For each={pageRows()}>
-                      {(row) => (
-                        <tr class={selection()?.(row) ? "is-selected" : ""}>
+                      {(entry: TableRow) => entry.kind === "subtotal" ? (
+                        <tr class="subtotal-row" data-level={String(entry.level)}>
+                          <For each={props.definition.columns}>
+                            {(column) => (
+                              <td>
+                                {column.key === entry.column
+                                  ? summaryLabel(formatValue(entry.row[column.key] ?? null, column.format, props.locale))
+                                  : column.aggregate ? formatValue(entry.row[column.key] ?? null, column.format, props.locale) : ""}
+                              </td>
+                            )}
+                          </For>
+                        </tr>
+                      ) : (
+                        <tr class={[selection()?.(entry.row) ? "is-selected" : "", isOtherRow(entry.row) ? "other-row" : ""].filter(Boolean).join(" ")}>
                           <For each={props.definition.columns}>
                             {(column) => {
+                              const row = entry.row;
                               const text = () => formatValue(row[column.key] ?? null, column.format, props.locale);
                               const target = columnTarget(column);
-                              const clickable = () => interactive().has(column.key)
+                              const clickable = () => interactive().has(column.key) && !isOtherRow(row)
                                 && target !== undefined && row[target.from] !== null && row[target.from] !== undefined;
                               return (
                                 <td>
@@ -564,12 +773,30 @@ function Dataset(props: {
                       )}
                     </For>
                   </tbody>
+                  <Show when={table().totals}>
+                    {(totals) => (
+                      <tfoot>
+                        <tr class="total-row">
+                          <For each={props.definition.columns}>
+                            {(column) => (
+                              <td>
+                                {column.key === totalLabel() ? "Total"
+                                  : column.aggregate ? formatValue(totals()[column.key] ?? null, column.format, props.locale) : ""}
+                              </td>
+                            )}
+                          </For>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </Show>
                 </table>
               </div>
               <div class="table-footer">
                 <span>
-                  {props.result.rows.length} rows
-                  {props.result.truncated ? " · Row limit reached" : ""}
+                  {ranked().hidden ? `${props.definition.topN?.order === "bottom" ? "Bottom" : "Top"} ${ranked().rows.filter((row) => !isOtherRow(row)).length} of ${props.result.rows.length} rows` : `${props.result.rows.length} rows`}
+                  {props.result.truncated ? ` · Row limit reached${unavailable() ? `; ${unavailable()} unavailable` : ""}` : ""}
+                  {printing() && table().rows.length > PRINT_ROWS
+                    ? ` · Printed the first ${PRINT_ROWS.toLocaleString(props.locale)} rows; download CSV or Excel for all` : ""}
                 </span>
                 <div>
                   <button
@@ -596,10 +823,11 @@ function Dataset(props: {
         >
           <Chart
             definition={props.definition}
-            result={props.result}
+            result={shown()}
             locale={props.locale}
             selected={selection()}
             onSelect={chartTargets().length ? chartSelect : undefined}
+            register={(next) => { snapshot = next; }}
           />
         </Show>
       </Show>
