@@ -1,4 +1,5 @@
-import { createContext, For, Show, useContext } from "solid-js";
+import { createContext, Show, useContext } from "solid-js";
+import { Select } from "./select";
 import { themeCookie, themeLabels, viewerTheme, type ResolvedTheme, type ThemeName } from "../core/theme";
 
 /**
@@ -25,13 +26,11 @@ export function applyTheme(project: ResolvedTheme, name: ThemeName) {
 
 export function ThemePicker(props: { theme: ResolvedTheme; active: ThemeName; onChange: (name: ThemeName) => void }) {
   return <Show when={props.theme.selectable.length > 1}>
-    <label class="theme-picker">
-      <span>Theme</span>
-      <select value={props.active} onChange={(event) => props.onChange(event.currentTarget.value as ThemeName)}>
-        <For each={props.theme.selectable}>
-          {(name) => <option value={name} selected={name === props.active}>{themeLabels[name]}</option>}
-        </For>
-      </select>
-    </label>
+    <div class="theme-picker">
+      <span id="theme-picker-label">Theme</span>
+      <Select id="theme-picker" labelledBy="theme-picker-label" value={props.active}
+        options={props.theme.selectable.map((name) => ({ value: name, label: themeLabels[name] }))}
+        onChange={(value) => props.onChange(value as ThemeName)} />
+    </div>
   </Show>;
 }

@@ -69,12 +69,20 @@ Controls follow the definition; there is no per-block configuration.
 
 | Definition | Control |
 | --- | --- |
-| `select` with static options | select |
-| `boolean` | All / Yes / No |
+| `select` with static or query options | select ("All" unless `required`) |
+| `boolean` | select: All / Yes / No |
 | `array` with static or query options | multiselect with a filter box |
 | `string`, `number`, `select` or `array` with `search: true` | autocomplete (chips for arrays) |
 | `range` of dates | date inputs with presets: year/month to date, last closed month/year, last 30 days, last 12 months |
 | `array` without options | comma-separated text |
+
+Selects, the period presets, Top N and the sidebar theme selector share one themed control rather than the browser's native select, so every list matches the theme and the multiselect. It follows the WAI-ARIA select-only combobox pattern:
+
+- **Keyboard:** arrows, Home, End, PageUp and PageDown move; Enter or Space chooses; Escape closes without changing; typing jumps to the next option starting with those letters, also while closed.
+- **Long lists:** more than eight options add a filter field.
+- **Placement:** the list opens below, or above when there is more room there (for example the theme selector at the bottom of the sidebar), and is never clipped by cards or the scrolling sidebar.
+
+The page menu on phones stays native, where the system picker is easier to use.
 
 ### Reserved query keys
 

@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack }
 import { resolveRelativeRange, todayIn } from "../core/dates";
 import type { ParamDefinition, ParamOption, ParamValue, Params, QueryParamOptions, Scalar } from "../core/types";
 import { appendParam } from "./actions";
+import { Select } from "./select";
 
 export interface ControlProps {
   name: string;
@@ -58,9 +59,10 @@ export function ParameterControl(props: ControlProps) {
         switch (kind()) {
           case "range": return <RangeControl {...props} />;
           case "boolean": return (
-            <select id={id()} value={key(props.value as Scalar ?? "")} onChange={(e) => props.onChange(e.currentTarget.value === "" ? null : e.currentTarget.value === "true")}>
-              <option value="">All</option><option value="true">Yes</option><option value="false">No</option>
-            </select>
+            <Select id={id()} value={key(props.value as Scalar ?? "")} required={def().required}
+              options={[...(def().required ? [] : [{ value: "", label: "All" }]), { value: "true", label: "Yes" }, { value: "false", label: "No" }]}
+              placeholder="Select…"
+              onChange={(value) => props.onChange(value === "" ? null : value === "true")} />
           );
           case "select": return <SelectControl {...props} id={id()} />;
           case "multi": return <MultiSelectControl {...props} id={id()} />;
@@ -110,21 +112,21 @@ function useQueryOptions(props: ControlProps) {
 }
 
 function SelectControl(props: ControlProps & { id: string }) {
-  const { options, error } = useQueryOptions(props);
+  const { options, error, loading } = useQueryOptions(props);
+  // Required parameters have no "All" choice; an empty value shows the placeholder.
+  const choices = createMemo(() => [
+    ...(props.definition.required ? [] : [{ value: "", label: "All" }]),
+    ...options().map((option) => ({ value: key(option.value), label: String(option.label ?? option.value) })),
+  ]);
   return (
     <>
-      <select id={props.id} value={key((props.value ?? "") as Scalar)} required={props.definition.required}
-        aria-invalid={error() ? "true" : undefined}
-        onChange={(e) => {
-          const raw = e.currentTarget.value;
+      <Select id={props.id} value={key((props.value ?? "") as Scalar)} options={choices()} loading={loading()}
+        required={props.definition.required} invalid={Boolean(error())}
+        placeholder={props.definition.placeholder ?? (props.value === undefined || props.value === null || props.value === "" ? "Select…" : String(props.value))}
+        onChange={(raw) => {
           const option = options().find((o) => key(o.value) === raw);
           props.onChange(raw === "" ? null : option ? option.value : raw);
-        }}>
-        <option value="">All</option>
-        <For each={options()}>{(option) => (
-          <option value={key(option.value)} selected={key(option.value) === key((props.value ?? "") as Scalar)}>{String(option.label ?? option.value)}</option>
-        )}</For>
-      </select>
+        }} />
       <Show when={error()}><span class="field-error">{error()}</span></Show>
     </>
   );
@@ -338,14 +340,12 @@ function RangeControl(props: ControlProps) {
   return (
     <div class="range-inputs" role="group" aria-labelledby={`param-${props.name}-label`}>
       <Show when={isDate()}>
-        <select aria-label={`${def().label} preset`} class="range-preset" value={preset()}
-          onChange={(e) => {
-            const chosen = presets.find((p) => p.id === e.currentTarget.value);
+        <Select label={`${def().label} preset`} class="range-preset" value={preset()}
+          options={[{ value: "", label: "Custom" }, ...presets.map((p) => ({ value: p.id, label: p.label }))]}
+          onChange={(value) => {
+            const chosen = presets.find((p) => p.id === value);
             if (chosen) props.onChange(resolveRelativeRange(chosen.range, todayIn(props.timezone)));
-          }}>
-          <option value="">Custom</option>
-          <For each={presets}>{(p) => <option value={p.id}>{p.label}</option>}</For>
-        </select>
+          }} />
       </Show>
       <input aria-label={`${def().label} from`} autocomplete="off" type={inputType()} value={key((range()?.from ?? "") as Scalar)}
         required={def().required} min={def().min} max={def().max} step={def().integer ? 1 : "any"}

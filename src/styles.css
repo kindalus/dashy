@@ -183,14 +183,9 @@ p {
   font-weight: 600;
   color: var(--nav-group);
 }
-.theme-picker select {
+.theme-picker .select-button {
   height: 32px;
-  width: 100%;
   padding: 4px 8px;
-  border: 1px solid var(--control-border);
-  border-radius: var(--radius-input);
-  background: var(--surface);
-  color: var(--text);
   font-size: 13px;
   font-weight: 400;
 }
@@ -327,7 +322,7 @@ main {
 .range-inputs input {
   width: 145px;
 }
-.range-inputs span {
+.range-inputs > span {
   font-size: 12px;
   color: var(--muted);
 }
@@ -711,6 +706,51 @@ tbody tr:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.select-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.select-button[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+.select-placeholder {
+  color: var(--muted);
+}
+/* Single-choice selects: as compact as the content allows, full width in the filter bar. */
+.select {
+  min-width: 0;
+}
+.select .select-button {
+  min-width: 0;
+}
+.filter-field > .select .select-button {
+  min-width: 140px;
+}
+.range-preset .select-button {
+  width: 150px;
+}
+/* Fixed so cards (overflow hidden) and the scrolling sidebar never clip the list. */
+.popover.select-popover {
+  position: fixed;
+  top: auto;
+  z-index: 40;
+  /* The list lives inside its label's element (e.g. the bold "Theme"), so reset text styles. */
+  font-weight: 400;
+  color: var(--text);
+}
+.select-popover .option-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.option-list li.is-selected {
+  font-weight: 600;
+}
+.option-list .check {
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--accent);
+}
 .caret {
   color: var(--muted);
   font-size: 11px;
@@ -936,17 +976,10 @@ tbody tr.is-selected {
 .export-options a:focus-visible {
   background: var(--surface-hover);
 }
-.top-n select:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.top-n select {
+.top-n .select-button {
+  min-width: 92px;
   height: 36px;
   padding: 4px 8px;
-  border: 1px solid var(--control-border);
-  border-radius: var(--radius-input);
-  background: var(--surface);
-  color: var(--text);
   font-size: 12px;
 }
 .sort-button {
@@ -1063,6 +1096,25 @@ tr.other-row td {
   }
 }
 @media (max-width: 720px) {
+  /* Phones: controls shrink to the column; the period preset takes its own row above the dates. */
+  .select-button,
+  .wide-field {
+    min-width: 0;
+  }
+  .range-inputs {
+    flex-wrap: wrap;
+  }
+  .range-preset {
+    flex: 1 0 100%;
+  }
+  .range-preset .select-button {
+    width: 100%;
+  }
+  .range-inputs input {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+  }
   .sidebar {
     display: none;
   }
@@ -1185,8 +1237,11 @@ tr.other-row td {
     flex: none;
     width: 100%;
   }
-  .range-inputs span {
+  .range-inputs > span {
     text-align: center;
+  }
+  .range-preset .select-button {
+    width: 100%;
   }
 }
 @media (prefers-reduced-motion: reduce) {

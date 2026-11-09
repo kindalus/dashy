@@ -38,6 +38,7 @@ import {
 } from "./actions";
 import { appendDrilldowns, describeDrilldown, levelLabel } from "../core/drilldown";
 import { chartKeyColumns } from "../core/charts";
+import { Select } from "./select";
 import { applyTopN, isOtherRow, labelColumn, shapeTable, summaryLabel, topNChoices, type TableRow } from "../core/tables";
 import { compareMetric, sparklinePaths, targetProgress } from "./metric-compare";
 import { describeFilters, filterValue } from "../core/filters";
@@ -719,20 +720,13 @@ function Dataset(props: {
           image={view() === "chart" && props.definition.chart ? saveImage : undefined} />
         <Show when={props.definition.topN}>
           {(topN) => (
-            <label class="top-n">
-              <span class="visually-hidden">Rows shown in {props.definition.label}</span>
-              <select name={`${props.id}-top-n`} disabled={!complete()}
-                onChange={(event) => setLimit(Number(event.currentTarget.value))}>
-                <For each={topNChoices(topN()).options}>
-                  {(n) => (
-                    <option value={String(n)} selected={(complete() ? limit() : 0) === n}>
-                      {topN().order === "bottom" ? "Bottom" : "Top"} {n}
-                    </option>
-                  )}
-                </For>
-                <option value="0" selected={!complete() || limit() === 0}>All</option>
-              </select>
-            </label>
+            <Select class="top-n" id={`${props.id}-top-n`} label={`Rows shown in ${props.definition.label}`}
+              disabled={!complete()} value={String(complete() ? limit() : 0)}
+              options={[
+                ...topNChoices(topN()).options.map((n) => ({ value: String(n), label: `${topN().order === "bottom" ? "Bottom" : "Top"} ${n}` })),
+                { value: "0", label: "All" },
+              ]}
+              onChange={(value) => setLimit(Number(value))} />
           )}
         </Show>
         <Show when={props.definition.chart}>
