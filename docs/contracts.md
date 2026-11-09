@@ -492,6 +492,6 @@ the values or series names. After six series it repeats. An explicit
 metric the same color in different charts regardless of order, set its `color`
 explicitly. The theme does not yet assign colors by semantic key.
 
-See [theme configuration](themes.md) for all five themes and independent input,
+See [theme configuration](themes.md) for all eight themes, the viewer theme selector and independent input,
 button and panel corners. Metric values use a separate theme token, so Excel's
 metrics retain the stronger green while chart series use moderately saturated shades.

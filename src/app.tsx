@@ -42,21 +42,30 @@ import { compareMetric, sparklinePaths, targetProgress } from "./metric-compare"
 import { describeFilters, filterValue } from "../core/filters";
 import { installPrint, printing } from "./print";
 import type { ChartSnapshot } from "./chart";
+import type { ThemeName } from "../core/theme";
+import { applyTheme, ThemeContext } from "./theme-picker";
 
 export interface AppProps {
   catalog: Catalog;
   dashboard: DashboardShell | null;
   page?: PageShell;
+  /** The theme rendered for this viewer: the project theme or their saved choice. */
+  theme?: ThemeName;
 }
 export function App(props: AppProps & { Page?: Component<PageProps> }) {
   const selected = props.page ? `/pages/${props.page.id}` : props.dashboard ? `/dashboards/${props.dashboard.id}` : undefined;
-  return <Workspace catalog={props.catalog} selected={selected}
-    label={props.page?.definition.label ?? props.dashboard?.definition.label}
-    kind={props.page ? "Pages" : "Dashboards"}>
-    {props.page && props.Page
-      ? <PageContent page={props.page} catalog={props.catalog} component={props.Page} />
-      : <DashboardContent {...props} />}
-  </Workspace>;
+  const [theme, setTheme] = createSignal<ThemeName>(untrack(() => props.theme ?? props.catalog.theme.name));
+  const changeTheme = (name: ThemeName) => setTheme(applyTheme(props.catalog.theme, name));
+  return <ThemeContext value={theme}>
+    <Workspace catalog={props.catalog} selected={selected}
+      label={props.page?.definition.label ?? props.dashboard?.definition.label}
+      kind={props.page ? "Pages" : "Dashboards"}
+      theme={theme()} onThemeChange={changeTheme}>
+      {props.page && props.Page
+        ? <PageContent page={props.page} catalog={props.catalog} component={props.Page} />
+        : <DashboardContent {...props} />}
+    </Workspace>
+  </ThemeContext>;
 }
 
 interface MenuState {

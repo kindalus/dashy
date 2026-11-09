@@ -13,6 +13,7 @@ export interface ChartSnapshot {
   font: string;
 }
 import { Spinner } from "./spinner";
+import { useActiveTheme } from "./theme-picker";
 
 export function Chart(props: {
   definition: DatasetDefinition;
@@ -25,6 +26,7 @@ export function Chart(props: {
   register?: (snapshot: () => ChartSnapshot | undefined) => void;
 }) {
   let element!: HTMLDivElement;
+  const theme = useActiveTheme();
   const [renderer, setRenderer] =
     createSignal<ReturnType<typeof import("./charts").createChart>>();
   const [error, setError] = createSignal("");
@@ -66,6 +68,8 @@ export function Chart(props: {
       locale: props.locale,
       selected: props.selected,
       print: printing(),
+      // Colors come from CSS tokens, so a theme change must redraw.
+      theme: theme(),
     }),
     ({ chart, definition, result, locale, selected, print }) => {
       if (!chart) return;

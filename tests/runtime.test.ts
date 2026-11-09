@@ -86,7 +86,7 @@ test("runtime theme selection overrides configured corners without modifying the
     theme: { name: "excel", corners: "none" },
   });
   await writeFile(path, original);
-  expect((await loadProject(path, "chromeos")).theme).toEqual({
+  expect((await loadProject(path, "chromeos")).theme).toMatchObject({
     name: "chromeos",
     corners: { inputs: "rounded", buttons: "rounded", panels: "rounded" },
   });
@@ -95,6 +95,10 @@ test("runtime theme selection overrides configured corners without modifying the
     corners: "none",
   });
   expect(await readFile(path, "utf8")).toBe(original);
+  // A selector list keeps working when the run's theme is not in it.
+  const limited = join(root, "limited.ts");
+  await writeFile(limited, config("Limited", { theme: { name: "excel", selectable: ["excel", "macos"] } }));
+  expect((await loadProject(limited, "cognos")).theme?.selectable).toEqual(["excel", "macos", "cognos"]);
   await expect(loadProject(path, "unknown")).rejects.toThrow(
     "unknown name 'unknown'",
   );
@@ -147,7 +151,7 @@ test("CLI lists the filesystem samples and rejects missing names and invalid arg
       const invalidTheme = await cli([command, `--theme=${name}`]);
       expect(invalidTheme.code).toBe(1);
       expect(invalidTheme.err).toContain(
-        "Choose excel, chromeos, chatgpt, claude-code, macos",
+        "Choose excel, chromeos, chatgpt, claude-code, macos, power-bi, microstrategy, cognos",
       );
     }
   }

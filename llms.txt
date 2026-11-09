@@ -284,7 +284,9 @@ Os dashboards têm uma grelha de 12 colunas, com `width` entre 1 e 12, e adapta�
 
 `group` agrupa dashboards na navegação pela ordem de declaração. Por omissão, o grupo é `Dashboards` e o ícone é `layout-dashboard`. Os ícones são nomes kebab-case da seleção Lucide suportada em [core/icons.ts](core/icons.ts), como `chart-line`, `users`, `store` e `database`. O ícone de navegação é independente dos tipos de gráfico.
 
-Os temas disponíveis são `excel`, `chromeos`, `chatgpt`, `claude-code` e `macos`. O default é Excel. `theme.corners` aceita um estilo comum ou `{ inputs, buttons, panels }`. Os estilos válidos são `none`, `rounded`, `rounded-sm`, `rounded-md` e `rounded-lg`; `rounded` dá formato de pill aos botões. A grafia suportada é `rounded`.
+Os temas disponíveis são `excel`, `chromeos`, `chatgpt`, `claude-code`, `macos`, `power-bi`, `microstrategy` e `cognos`. `power-bi` e `microstrategy` usam cantos `rounded-sm` por omissão; `cognos` usa `none`. O default é Excel. `theme.corners` aceita um estilo comum ou `{ inputs, buttons, panels }`. Os estilos válidos são `none`, `rounded`, `rounded-sm`, `rounded-md` e `rounded-lg`; `rounded` dá formato de pill aos botões. A grafia suportada é `rounded`.
+
+O seletor **Theme** no fundo da barra lateral muda o tema no browser, sem reiniciar. A escolha fica no cookie `dashy_theme` e é aplicada no SSR. Um tema escolhido usa os seus cantos por omissão; o tema do projecto mantém os cantos configurados. `theme.selectable` é `true` por omissão (todos os temas); uma lista limita as opções e tem de incluir `name`; `false` esconde o seletor.
 
 `--theme` substitui o tema configurado e usa os cantos por omissão desse tema nessa execução. Cada tema tem a sua paleta. As séries recebem cores pela posição, repetindo a paleta após seis séries; `chart.series[].color` permite uma cor explícita. Para preservar a mesma cor semântica em gráficos com ordens diferentes, definir essa cor nas séries correspondentes.
 

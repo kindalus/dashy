@@ -166,7 +166,7 @@ See [contracts and examples](docs/contracts.md), [source adapters](docs/sources.
 
 ## Themes
 
-Choose `excel` (default), `chromeos`, `chatgpt`, `claude-code` or `macos` at startup:
+Choose `excel` (default), `chromeos`, `chatgpt`, `claude-code`, `macos`, `power-bi`, `microstrategy` or `cognos` at startup:
 
 ```sh
 bun run dev --theme chromeos
@@ -186,6 +186,8 @@ theme: {
 ```
 
 Corners can also use one shared style: `corners: "none"`. Supported styles are `none`, `rounded` (pill buttons), `rounded-sm`, `rounded-md` and `rounded-lg`. Each theme supplies defaults when corners are omitted. Restart after configuration edits; when using `--with-sample`, edit that sample's config.
+
+Viewers can switch themes from the selector at the bottom of the sidebar, without a restart; the choice is kept in a cookie and applied during server rendering. `theme.selectable` limits the choices (`["excel", "power-bi"]`) or hides the selector (`false`). See [viewer selection](docs/themes.md#viewer-selection).
 
 Excel uses green metric values and a chart palette with moderate saturation. All themes coordinate charts, controls, panels and navigation through CSS tokens in `src/themes/`. Chart colors follow series order; `chart.series[].color` overrides a series explicitly. See [theme configuration and defaults](docs/themes.md) and [the chart palette](docs/contracts.md#chart-palette).
 

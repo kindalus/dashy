@@ -54,7 +54,7 @@ export async function loadProject(
     locale: locale ?? base.locale ?? "pt",
     ...(theme === undefined
       ? {}
-      : { theme: resolveTheme({ name: theme as ThemeName }) }),
+      : { theme: resolveTheme({ name: theme as ThemeName, selectable: runtimeSelectable(base.theme?.selectable, theme as ThemeName) }) }),
   });
   return {
     ...project,
@@ -78,4 +78,10 @@ function mergeRegistry(name: string, first: unknown, second: unknown) {
 
 export async function loadImplementation(locations: ProjectLocations) {
   return loadProject(locations.config, locations.theme, locations.locale, locations);
+}
+
+/** `--theme` keeps the project's selector, adding the run's theme when a list omits it. */
+function runtimeSelectable(selectable: unknown, name: ThemeName) {
+  if (!Array.isArray(selectable) || !selectable.length) return selectable as boolean | undefined;
+  return selectable.includes(name) ? selectable : [...selectable, name];
 }

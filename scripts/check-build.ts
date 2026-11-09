@@ -3,7 +3,7 @@ import { cp, mkdtemp, rm, writeFile, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { DashboardResult } from "../core/types";
-import { themeNames, resolveTheme } from "../core/theme";
+import { themeNames, resolveTheme, viewerTheme } from "../core/theme";
 
 // Run the actual packaged CLI and server outside the source tree. This catches
 // both missing production dependencies and build-time sample selection leaks.
@@ -15,7 +15,7 @@ try {
   async function withServer(
     sample: string | undefined,
     verify: (
-      request: (path: string, method?: string, signal?: AbortSignal, body?: unknown) => Promise<Response>,
+      request: (path: string, method?: string, signal?: AbortSignal, body?: unknown, headers?: Record<string, string>) => Promise<Response>,
     ) => Promise<void>,
     theme?: string,
     locale?: string,
@@ -42,9 +42,9 @@ try {
     );
     const out = new Response(child.stdout).text();
     const err = new Response(child.stderr).text();
-    const request = (path: string, method = "GET", signal?: AbortSignal, body?: unknown) =>
-      fetch(`http://127.0.0.1:${port}${path}`, { method, signal, ...(body === undefined ? {} : {
-        body: JSON.stringify(body), headers: { "Content-Type": "application/json", "X-Dashy-Request": "1" },
+    const request = (path: string, method = "GET", signal?: AbortSignal, body?: unknown, headers: Record<string, string> = {}) =>
+      fetch(`http://127.0.0.1:${port}${path}`, { method, signal, headers, ...(body === undefined ? {} : {
+        body: JSON.stringify(body), headers: { ...headers, "Content-Type": "application/json", "X-Dashy-Request": "1" },
       }) });
     try {
       const deadline = Date.now() + 20000;
@@ -317,6 +317,13 @@ try {
       await withServer("runtime-added", async (request) => {
         const data = await checkPage(request);
         assert.deepEqual(data.catalog.theme, resolveTheme(theme));
+        // A viewer's saved choice reaches the first paint with that theme's corners.
+        const chosen = themeNames[(themeNames.indexOf(name) + 3) % themeNames.length]!;
+        const html = await (await request("/", "GET", undefined, undefined, { Cookie: `dashy_theme=${chosen}` })).text();
+        const expected = viewerTheme(resolveTheme(theme), chosen);
+        assert.ok(html.includes(`data-theme="${expected.name}"`), `cookie theme ${chosen}`);
+        assert.ok(html.includes(`data-corners-panels="${expected.corners.panels}"`));
+        assert.ok(html.includes('class="theme-picker"'));
       });
       // CLI selection replaces both the configured theme and its corner overrides.
       const overrideName =

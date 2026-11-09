@@ -16,6 +16,7 @@ import {
 } from "../core/http";
 import { readCrossFilters } from "../core/engine";
 import { DashyError, readParams } from "../core/params";
+import { readThemeCookie, viewerTheme } from "../core/theme";
 import clientAssets from "./entry-client?assets=client";
 import serverAssets from "./entry-server?assets=ssr";
 
@@ -57,8 +58,10 @@ export default {
       const kind = match?.[1] ?? (Object.keys(catalog.dashboards).length ? "dashboards" : "pages");
       const id = match?.[2] || Object.keys(kind === "pages" ? catalog.pages ?? {} : catalog.dashboards)[0];
       const raw = readParams(url.searchParams, engine.project.params);
+      const theme = viewerTheme(catalog.theme, readThemeCookie(request.headers.get("Cookie")));
       const props: AppProps = {
         catalog,
+        theme: theme.name,
         dashboard: id && kind === "dashboards"
           ? engine.dashboardShell(id, raw, principal, { crossFilters: readCrossFilters(url.searchParams) })
           : null,
@@ -78,10 +81,10 @@ export default {
         () => (
           <html
             lang={catalog.locale.split("-")[0]}
-            data-theme={catalog.theme.name}
-            data-corners-inputs={catalog.theme.corners.inputs}
-            data-corners-buttons={catalog.theme.corners.buttons}
-            data-corners-panels={catalog.theme.corners.panels}
+            data-theme={theme.name}
+            data-corners-inputs={theme.corners.inputs}
+            data-corners-buttons={theme.corners.buttons}
+            data-corners-panels={theme.corners.panels}
           >
             <head>
               <meta charset="utf-8" />

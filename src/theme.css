@@ -3,6 +3,9 @@
 @import "./themes/chatgpt.css";
 @import "./themes/claude-code.css";
 @import "./themes/macos.css";
+@import "./themes/power-bi.css";
+@import "./themes/microstrategy.css";
+@import "./themes/cognos.css";
 @import "./themes/corners.css";
 
 /* The product mark remains the same in every implementation. */
