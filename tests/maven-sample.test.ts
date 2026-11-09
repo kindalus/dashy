@@ -140,3 +140,49 @@ test("Maven drill-downs: category to brand to product, and year to quarter insid
   expect(quarters.reduce((sum, row) => sum + Number(row.revenue), 0))
     .toBeCloseTo(Number(years.find((row) => row.period === "2020-01-01")!.revenue), 2);
 }, csvTimeout);
+
+test("Maven product margin: tone, note and fallback come from the metric's row", async () => {
+  const period = { from: "2020-01-01", until: "2020-12-31" };
+  const products = (await engine.query("products", { period })).rows;
+  const name = String(products[0]!.product);
+  const sold = await engine.metricValue("product_margin", { period, productName: name });
+  expect(typeof sold.value).toBe("number");
+  const margin = Number(sold.value);
+  expect(sold.tone).toBe(margin >= 0.6 ? "success" : margin >= 0.5 ? "warning" : "danger");
+  expect(sold.fallback).toBeNull();
+  // A product without sales in the filters has no value: the fallback text explains it.
+  const none = await engine.metricValue("product_margin", { period, productName: "No such product" });
+  expect(none).toEqual({ value: null, fallback: "No sales", tone: "neutral" });
+  // Dashboard blocks carry the same parts.
+  const detail = await engine.dashboard("product-detail", { period, productName: name });
+  expect(detail.blocks.find((b) => b.id === "product_margin")).toMatchObject({ type: "metric", value: sold.value, tone: sold.tone });
+  // The plain value API is unchanged.
+  expect(await engine.metric("product_margin", { period, productName: name })).toBe(sold.value);
+}, csvTimeout);
+
+test("an unknown tone is neutral and a blank note is left out", async () => {
+  const project = await loadProject("samples/maven-analytics/dashy.config.ts");
+  const odd = new DashyEngine({
+    ...project,
+    queries: {
+      ...project.queries,
+      product_margin: {
+        ...project.queries.product_margin!,
+        build: () => ({ text: "SELECT CAST(0.5 AS DOUBLE) AS margin, NULL AS no_sales, 'loud' AS tone, '  ' AS note", values: [] }),
+      },
+    },
+  });
+  expect(await odd.metricValue("product_margin")).toEqual({ value: 0.5, fallback: null, tone: "neutral" });
+  const noted = new DashyEngine({
+    ...project,
+    queries: {
+      ...project.queries,
+      product_margin: {
+        ...project.queries.product_margin!,
+        build: () => ({ text: "SELECT CAST(0.4 AS DOUBLE) AS margin, NULL AS no_sales, 'danger' AS tone, ' -6m ' AS note", values: [] }),
+      },
+    },
+  });
+  expect(await noted.metricValue("product_margin")).toEqual({ value: 0.4, fallback: null, tone: "danger", note: "-6m" });
+});
+

@@ -134,6 +134,11 @@ export function defineProject<const T extends ProjectDefinition>(
       assert(t.value === undefined || Number.isFinite(t.value), `${name} target value must be a finite number`);
       assert(text(t.label), `${name} target label must be a non-empty string`);
     }
+    for (const key of ["fallback", "tone", "note"] as const) {
+      const column: unknown = metric[key];
+      assert(column === undefined || (typeof column === "string" && column.length > 0), `${name} ${key} must be a column name`);
+      assert(column !== metric.column, `${name} ${key} must be a column other than ${metric.column}`);
+    }
     const sparkline: unknown = metric.sparkline;
     if (sparkline !== undefined) {
       const s = (typeof sparkline === "object" && sparkline !== null ? sparkline : {}) as Record<string, unknown>;

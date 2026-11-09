@@ -546,11 +546,19 @@ function DashboardCard(props: {
               <h2><Show when={props.cellRef}><span class="cell-ref" aria-hidden="true">{props.cellRef} · </span></Show>{block().definition.label}</h2>
               {(() => {
                 // Compact from one million so values never wrap; the exact value stays in the tooltip.
-                const shown = () => formatMetric(block().value, block().definition.format, props.locale);
+                // A null value shows the fallback column's text when the metric declares one.
+                const shown = () => {
+                  const { value, fallback } = block();
+                  return (value === null || value === undefined) && fallback !== null && fallback !== undefined && String(fallback).trim()
+                    ? { text: String(fallback), full: String(fallback) }
+                    : formatMetric(value, block().definition.format, props.locale);
+                };
+                const tone = () => block().tone && block().tone !== "neutral" ? ` tone-${block().tone}` : "";
                 return (
-                  <div class="metric-value" title={shown().full}>
-                    <span aria-hidden={shown().text !== shown().full ? "true" : undefined}>{shown().text}</span>
+                  <div class="metric-value" title={block().note ? `${shown().full} (${block().note})` : shown().full}>
+                    <span class={`metric-figure${tone()}`} aria-hidden={shown().text !== shown().full ? "true" : undefined}>{shown().text}</span>
                     <Show when={shown().text !== shown().full}><span class="visually-hidden">{shown().full}</span></Show>
+                    <Show when={block().note}>{(note) => <span class="metric-note">{note()}</span>}</Show>
                   </div>
                 );
               })()}

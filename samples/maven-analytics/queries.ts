@@ -140,6 +140,19 @@ function monthlyComplete(): QueryDefinition {
 
 export const queries = {
   summary: summary(),
+  // A metric with a tone, a note and a fallback, all from one row (see product_margin).
+  product_margin: query(
+    "Product margin",
+    `SELECT SUM(revenue - cost) / NULLIF(SUM(revenue), 0) AS margin,
+      CASE WHEN COALESCE(SUM(revenue), 0) = 0 THEN 'No sales' END AS no_sales,
+      CASE WHEN COALESCE(SUM(revenue), 0) = 0 THEN 'neutral'
+        WHEN SUM(revenue - cost) / SUM(revenue) >= 0.6 THEN 'success'
+        WHEN SUM(revenue - cost) / SUM(revenue) >= 0.5 THEN 'warning'
+        ELSE 'danger' END AS tone,
+      CASE WHEN COUNT(DISTINCT order_number) BETWEEN 1 AND 9
+        THEN CONCAT(COUNT(DISTINCT order_number), ' orders') END AS note
+    FROM filtered`,
+  ),
   monthly: query(
     "Monthly sales by channel",
     `SELECT strftime(order_date, '%Y-%m') AS month,

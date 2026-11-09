@@ -136,4 +136,11 @@ describe("metric comparisons", () => {
     metricCase({ sparkline: { dataset: "nope", value: "x" } }, "total sparkline references unknown dataset nope");
     metricCase({ sparkline: { dataset: "by_client", value: "x" } }, "total sparkline value must be a column of by_client");
   });
+  test("fallback, tone and note name other columns of the row", () => {
+    for (const key of ["fallback", "tone", "note"]) {
+      metricCase({ [key]: "" }, `total ${key} must be a column name`);
+      metricCase({ [key]: 3 }, `total ${key} must be a column name`);
+    }
+    metricCase({ tone: "value" }, "total tone must be a column other than value");
+  });
 });

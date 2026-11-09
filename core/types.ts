@@ -301,6 +301,28 @@ export interface MetricDefinition {
   target?: MetricTarget;
   /** A small trend line from a dataset's column, in query order. */
   sparkline?: MetricSparkline;
+  /**
+   * Column of the same query row shown, as text, when `column` is null, e.g.
+   * "Not eligible" where a credit limit does not apply.
+   */
+  fallback?: string;
+  /**
+   * Column of the same query row naming the value's tone: success, warning, danger
+   * or neutral. It colours the value; the value or note must carry the meaning too.
+   * Any other value, or null, is neutral.
+   */
+  tone?: string;
+  /** Column of the same query row with a short note shown next to the value, e.g. "-6m". */
+  note?: string;
+}
+/** Tones a metric's `tone` column can name. */
+export type MetricTone = "success" | "warning" | "danger" | "neutral";
+/** A metric's value with the parts its query row adds when the metric declares them. */
+export interface MetricValue {
+  value: Scalar;
+  fallback?: Scalar;
+  tone?: MetricTone;
+  note?: string;
 }
 export interface MetricComparison {
   column: string;
@@ -482,6 +504,7 @@ export type BlockResult = { id: string } & (
       type: "metric"; definition: MetricDefinition; value: Scalar;
       /** Present when the metric declares them. */
       compare?: Scalar; target?: Scalar; sparkline?: (number | null)[];
+      fallback?: Scalar; tone?: MetricTone; note?: string;
     }
   | { type: "dataset"; definition: DatasetDefinition; result: QueryResult }
   | { type: "error"; message: string }

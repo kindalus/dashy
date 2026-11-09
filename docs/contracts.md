@@ -324,7 +324,29 @@ build: ({ source, params, sql }) => {
 }
 ```
 
-In dashboard data, a metric block carries `compare`, `target` and `sparkline` when declared. `/api/metrics/:name` still returns `{ value }`.
+### Tone, note and fallback
+
+The query row can also decide how a value reads: its colour, a short note beside it, and what to show when there is no value. Each names another column of the same row:
+
+```ts
+metrics: {
+  credit_limit: {
+    label: 'Recommended credit', query: 'credit', column: 'limit',
+    format: { style: 'currency', currency: 'AOA', decimals: 0 },
+    fallback: 'reason',   // 'Not eligible' when limit is NULL
+    tone: 'tone',         // 'success' | 'warning' | 'danger' | 'neutral'
+    note: 'note'          // e.g. '-6m'
+  }
+}
+```
+
+- **`fallback`** is shown, as text, when `column` is `NULL`, so one metric can be a number for some rows and a reason for others.
+- **`tone`** colours the value: `success`, `warning` or `danger`. Any other value, or `NULL`, is neutral. Colour is never the only signal: the value, its note or the description must say the same.
+- **`note`** appears small beside the value and in its tooltip. A blank note is left out.
+
+They come from the metric's own row, so they add no query. Text and date metrics need nothing extra: a text column shows as it is, and `format: { style: 'date' }` formats a date.
+
+In dashboard data, a metric block carries `compare`, `target`, `sparkline`, `fallback`, `tone` and `note` when declared. `/api/metrics/:name` returns `{ value }`, plus `fallback`, `tone` and `note` when the metric declares them.
 
 ## Dashboards
 

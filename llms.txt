@@ -262,7 +262,7 @@ Limites atuais:
 
 ## Apresentação, navegação e temas
 
-Uma métrica pode declarar `compare: { column, label?, as?: "percent" | "delta", better?: "higher" | "lower" }` (outra coluna da mesma linha, por exemplo o período anterior, calculado em SQL com `sql.previousRange(period, "period" | "year")`; meses completos comparam com os meses anteriores, outros intervalos com o mesmo número de dias), `target: { column } | { value }` e `sparkline: { dataset, value }`. Ver [comparação, alvo e sparkline](docs/contracts.md#comparison-target-and-sparkline).
+Uma métrica pode declarar `compare: { column, label?, as?: "percent" | "delta", better?: "higher" | "lower" }` (outra coluna da mesma linha, por exemplo o período anterior, calculado em SQL com `sql.previousRange(period, "period" | "year")`; meses completos comparam com os meses anteriores, outros intervalos com o mesmo número de dias), `target: { column } | { value }` e `sparkline: { dataset, value }`. Ver [comparação, alvo e sparkline](docs/contracts.md#comparison-target-and-sparkline). Pode ainda declarar `fallback`, `tone` e `note`, cada um o nome de outra coluna da mesma linha: `fallback` é o texto mostrado quando o valor é `NULL`, `tone` (`success`, `warning`, `danger` ou `neutral`) colore o valor e `note` aparece pequena ao lado. Ver [tom, nota e texto de recurso](docs/contracts.md#tone-note-and-fallback).
 
 Uma métrica exige uma query com no máximo uma linha e a coluna indicada. Uma coluna inexistente, múltiplas linhas ou um resultado truncado são erros. Sem linhas ou com SQL NULL, apresenta `—`; usar `COALESCE` quando a regra de negócio exige zero.
 

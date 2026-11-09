@@ -588,6 +588,23 @@ td.has-bar {
   font-size: 12px;
   color: var(--muted);
 }
+/* A tone from the metric's query colours the figure itself, over any theme highlight. */
+.metric-figure.tone-success {
+  color: var(--success);
+}
+.metric-figure.tone-warning {
+  color: var(--warning);
+}
+.metric-figure.tone-danger {
+  color: var(--danger);
+}
+.metric-note {
+  margin-left: 6px;
+  font-size: 0.42em;
+  font-weight: 600;
+  vertical-align: super;
+  color: var(--muted);
+}
 .metric-compare .metric-arrow {
   font-size: 9px;
 }

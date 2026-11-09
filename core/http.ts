@@ -185,7 +185,7 @@ export function createApiHandler(engine: DashyEngine) {
         else if (parts[1] === "datasets")
           result = await engine.dataset(name, params, principal, undefined, request.signal, { refresh });
         else if (parts[1] === "metrics")
-          result = { value: await engine.metric(name, params, principal, undefined, request.signal, { refresh }) };
+          result = await engine.metricValue(name, params, principal, undefined, request.signal, { refresh });
         else if (parts[1] === "queries")
           result = await engine.query(name, params, principal, request.signal, { refresh });
         else throw new DashyError("Endpoint not found", 404);

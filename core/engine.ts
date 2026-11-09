@@ -27,6 +27,9 @@ import type {
   ProjectDefinition,
   QueryParamOptions,
   QueryResult,
+  MetricDefinition,
+  MetricTone,
+  MetricValue,
   Scalar,
   SqlStatement,
 } from "./types";
@@ -294,6 +297,20 @@ export class DashyEngine {
     signal?: AbortSignal,
     options: ExecutionOptions = {},
   ): Promise<Scalar> {
+    return (await this.metricValue(name, raw, principal, execute, signal, options)).value;
+  }
+  /**
+   * A metric's value with its fallback, tone and note when the metric declares
+   * them. They come from the same query row, so they add no query.
+   */
+  async metricValue(
+    name: string,
+    raw: Record<string, unknown> = {},
+    principal?: Principal,
+    execute?: (query: string, raw: Record<string, unknown>, principal?: Principal, signal?: AbortSignal) => Promise<QueryResult>,
+    signal?: AbortSignal,
+    options: ExecutionOptions = {},
+  ): Promise<MetricValue> {
     const definition = this.project.metrics[name];
     if (!definition || !Object.hasOwn(this.project.metrics, name))
       throw new DashyError("Metric not found", 404);
@@ -301,11 +318,12 @@ export class DashyEngine {
     const result = await (execute
       ? execute(definition.query, raw, principal, signal)
       : this.query(definition.query, raw, principal, signal, options));
-    if (!result.columns.includes(definition.column))
-      throw new Error(`Metric ${name} has no column ${definition.column}`);
+    for (const column of [definition.column, definition.fallback, definition.tone, definition.note])
+      if (column && !result.columns.includes(column))
+        throw new Error(`Metric ${name} has no column ${column}`);
     if (result.rows.length > 1 || result.truncated)
       throw new Error(`Metric ${name} must return at most one row`);
-    return result.rows[0]?.[definition.column] ?? null;
+    return metricParts(definition, result.rows[0]);
   }
   /**
    * A metric block's value plus its comparison, target and sparkline. The extra
@@ -321,8 +339,9 @@ export class DashyEngine {
     signal?: AbortSignal,
   ): Promise<Extract<BlockResult, { type: "metric" }>> {
     const definition = this.project.metrics[name]!;
-    const value = await this.metric(name, {}, principal, execute);
-    const block: Extract<BlockResult, { type: "metric" }> = { id: "", type: "metric", definition, value };
+    const block: Extract<BlockResult, { type: "metric" }> = {
+      id: "", type: "metric", definition, ...await this.metricValue(name, {}, principal, execute),
+    };
     const extra = [definition.compare?.column, definition.target?.column].filter((column): column is string => Boolean(column));
     if (extra.length) {
       const result = await execute(definition.query);
@@ -603,4 +622,20 @@ export class DashyEngine {
       await session.close();
     }
   }
+}
+
+const metricTones: readonly MetricTone[] = ["success", "warning", "danger", "neutral"];
+/** The value plus whichever of fallback, tone and note the metric declares, from one query row. */
+function metricParts(definition: MetricDefinition, row: Record<string, Scalar> | undefined): MetricValue {
+  const parts: MetricValue = { value: row?.[definition.column] ?? null };
+  if (definition.fallback) parts.fallback = row?.[definition.fallback] ?? null;
+  if (definition.tone) {
+    const tone = row?.[definition.tone];
+    parts.tone = metricTones.includes(tone as MetricTone) ? tone as MetricTone : "neutral";
+  }
+  if (definition.note) {
+    const note = row?.[definition.note];
+    if (note !== null && note !== undefined && String(note).trim()) parts.note = String(note).trim();
+  }
+  return parts;
 }

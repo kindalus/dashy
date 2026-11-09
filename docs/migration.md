@@ -40,7 +40,7 @@ The original source was archived before edits at `/tmp/dashy-migration-backup/or
 2. Move each SQL builder to `project.queries`. Builders return `{ text, values }` instead of `{ sql, bindings }`.
 3. Move parameter definitions to `project.params`. Use `default`, `required`, and a discriminating `type`. Replace domain-specific dimension selectors with project-owned parameter options or extend the renderer.
 4. Reference a query from each dataset and declare its table columns. Define chart axes and series if needed.
-5. Reference a query and scalar column from each metric. Text metrics use the same contract as numeric metrics.
+5. Reference a query and scalar column from each metric. Text metrics use the same contract as numeric metrics. Value metrics become metrics: the SQL-chosen `tone` and `annotation` become the `tone` and `note` columns, and a value that is a number for some rows and a reason for others uses `column` for the number and `fallback` for the reason (see [tone, note and fallback](contracts.md#tone-note-and-fallback)).
 6. Replace dashboard `kind`, `colSpan` and `rowSpan` with `type` and `width`. Use plain `defaults` rather than named default functions.
 7. Provide the project's authentication hook and roles. The old home-directory auth files are not read or modified.
 8. Export the project from `dashy.config.ts` and run the tests, typecheck and build.

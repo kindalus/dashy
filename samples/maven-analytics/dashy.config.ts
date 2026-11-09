@@ -136,6 +136,17 @@ export default defineProject({
   metrics: {
     ...metrics,
     catalogue: { label: "Products in catalogue", query: "catalogue", column: "products", format: { decimals: 0 } },
+    // The query row also chooses the colour, adds a note and says when there is no value.
+    product_margin: {
+      label: "Gross margin",
+      description: "Green from 60 %, amber from 50 %, red below. Few orders are noted.",
+      query: "product_margin",
+      column: "margin",
+      format: percent,
+      fallback: "no_sales",
+      tone: "tone",
+      note: "note",
+    },
   },
   datasets: {
     monthly: {
@@ -455,7 +466,7 @@ export default defineProject({
       drillthrough: { param: "productName" },
       blocks: [
         metric("revenue"),
-        metric("profit"),
+        metric("product_margin"),
         metric("units"),
         metric("orders"),
         dataset("monthly"),
