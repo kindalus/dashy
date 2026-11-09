@@ -103,7 +103,7 @@ try {
         data.dashboard.definition.blocks.length,
       );
     }
-    assert.ok(html.includes(`data-theme="${data.catalog.theme.name}"`));
+    assert.ok(html.includes(`data-theme="${data.catalog.theme.themes[data.catalog.theme.name].attribute}"`));
     for (const target of ["inputs", "buttons", "panels"] as const)
       assert.ok(
         html.includes(
@@ -126,6 +126,14 @@ try {
       request,
       "/dashboards/overview?country=Canada&channel=Online",
     );
+    // The project theme is offered, paints on the first response and ships in the CSS.
+    assert.equal(data.catalog.theme.name, "zafir");
+    assert.equal(data.catalog.theme.themes.maven?.label, "Maven");
+    const themed = await (await request("/dashboards/overview", "GET", undefined, undefined, { Cookie: "dashy_theme=maven" })).text();
+    assert.ok(themed.includes('data-theme="power-bi maven"'), "Maven paints on the first response");
+    const styles = await Promise.all([...themed.matchAll(/href="([^"]+\.css)"/g)].map(async ([, href]) => (await request(href!)).text()));
+    assert.ok(styles.some((css) => /\[data-theme~=(")?maven/.test(css)), "Maven stylesheet is bundled");
+    assert.ok(styles.some((css) => /\[data-theme~=(")?zafir/.test(css)), "Zafir stylesheet is bundled");
     for (const [id, dataset] of [["product-explorer", "products"], ["market-explorer", "countries"]]) {
       const page = await checkPage(request, `/pages/${id}?category=Computers&channel=Online`);
       assert.equal(page.page.id, id);
@@ -321,7 +329,7 @@ try {
         const chosen = themeNames[(themeNames.indexOf(name) + 3) % themeNames.length]!;
         const html = await (await request("/", "GET", undefined, undefined, { Cookie: `dashy_theme=${chosen}` })).text();
         const expected = viewerTheme(resolveTheme(theme), chosen);
-        assert.ok(html.includes(`data-theme="${expected.name}"`), `cookie theme ${chosen}`);
+        assert.ok(html.includes(`data-theme="${expected.attribute}"`), `cookie theme ${chosen}`);
         assert.ok(html.includes(`data-corners-panels="${expected.corners.panels}"`));
         assert.ok(html.includes('class="theme-picker"'));
       });

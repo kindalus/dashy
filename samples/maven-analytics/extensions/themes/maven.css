@@ -1,0 +1,18 @@
+/* Maven: a small project theme, to show the format.
+   It extends Power BI, so it only states what differs: a green accent, a dark green
+   top bar and a green rule under table headers. Everything else comes from Power BI,
+   then from Zafir. */
+:root[data-theme~="maven"] {
+  --accent: #1d6b4f;
+  --accent-hover: #14523c;
+  --accent-soft: #eaf4ef;
+  --accent-border: #9cc9b4;
+  --focus: #1d6b4f;
+  --header-background: #12392b;
+  --header-text: #ffffff;
+  --header-border: #12392b;
+  --metric-border: #1d6b4f;
+}
+:root[data-theme~="maven"] th {
+  border-bottom: 2px solid #1d6b4f;
+}

@@ -1,6 +1,6 @@
 import { createContext, Show, useContext } from "solid-js";
 import { Select } from "./select";
-import { themeCookie, themeLabels, viewerTheme, type ResolvedTheme, type ThemeName } from "../core/theme";
+import { themeCookie, viewerTheme, type ResolvedTheme, type ThemeName } from "../core/theme";
 
 /**
  * The active theme name. Charts read it so they redraw with the new palette;
@@ -13,7 +13,8 @@ export const useActiveTheme = () => useContext(ThemeContext);
 export function applyTheme(project: ResolvedTheme, name: ThemeName) {
   const theme = viewerTheme(project, name);
   const root = document.documentElement;
-  root.dataset.theme = theme.name;
+  // Project themes carry their base theme too ("excel acme"), so both stylesheets apply.
+  root.dataset.theme = theme.attribute;
   root.dataset.cornersInputs = theme.corners.inputs;
   root.dataset.cornersButtons = theme.corners.buttons;
   root.dataset.cornersPanels = theme.corners.panels;
@@ -29,7 +30,7 @@ export function ThemePicker(props: { theme: ResolvedTheme; active: ThemeName; on
     <div class="theme-picker">
       <span id="theme-picker-label">Theme</span>
       <Select id="theme-picker" labelledBy="theme-picker-label" value={props.active}
-        options={props.theme.selectable.map((name) => ({ value: name, label: themeLabels[name] }))}
+        options={props.theme.selectable.map((name) => ({ value: name, label: props.theme.themes[name]?.label ?? name }))}
         onChange={(value) => props.onChange(value as ThemeName)} />
     </div>
   </Show>;

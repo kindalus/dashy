@@ -13,7 +13,7 @@ import type { DatasetColumn } from "./types.ts";
 export function defineProject<const T extends ProjectDefinition>(
   project: T,
 ): T {
-  resolveTheme(project.theme);
+  resolveTheme(project.theme, project.themes);
   if (project.locale !== undefined) {
     try {
       if (typeof project.locale !== "string" || !project.locale)

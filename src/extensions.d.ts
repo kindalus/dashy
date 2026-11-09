@@ -5,3 +5,6 @@ declare module "virtual:dashy-pages" {
     load(): Promise<{ default: import("solid-js").Component<import("./extension-api").PageProps> }>;
   }>;
 }
+
+/** The project's theme stylesheets; importing it bundles them. */
+declare module "virtual:dashy-themes" {}

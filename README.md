@@ -166,7 +166,7 @@ See [contracts and examples](docs/contracts.md), [source adapters](docs/sources.
 
 ## Themes
 
-Choose `excel` (default), `chromeos`, `chatgpt`, `claude-code`, `macos`, `power-bi`, `microstrategy` or `cognos` at startup:
+Choose `zafir` (default), `excel`, `chromeos`, `chatgpt`, `claude-code`, `macos`, `power-bi`, `microstrategy` or `cognos` at startup, or a theme your project adds ([project themes](docs/themes.md#project-themes)):
 
 ```sh
 bun run dev --theme chromeos

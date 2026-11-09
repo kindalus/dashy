@@ -311,6 +311,8 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
     filename: () => `${shell()?.id ?? "dashboard"}-${blockId}`,
   });
   const activeTheme = useActiveTheme();
+  // Each theme says how filters look; no theme is special-cased here.
+  const filterStyle = () => props.catalog.theme.themes[activeTheme() ?? props.catalog.theme.name]?.filters ?? "chips";
   const formula = () => {
     const current = shell();
     if (!current) return "";
@@ -349,6 +351,10 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
           </Show>
           <div class="page-heading">
             <div>
+              {/* An eyebrow with the navigation group; themes that use it show it. */}
+              <Show when={definition()}>
+                <span class="page-eyebrow" aria-hidden="true">{definition()?.group ?? "Dashboards"}</span>
+              </Show>
               <h1>{definition()?.label || "Your dashboards"}</h1>
               <p>
                 {definition()
@@ -390,8 +396,8 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
                 timezone={props.catalog.timezone}
                 locale={locale()}
                 context={draft}
-                fields={activeTheme() === "cognos"}
-                visible={activeTheme() === "cognos" ? 4 : 3}
+                fields={filterStyle() === "fields"}
+                visible={filterStyle() === "fields" ? 4 : 3}
                 prompt={`dashy ${shell()?.id ?? ""}`}
               />
               <div class="filter-actions">
@@ -752,6 +758,11 @@ function Dataset(props: {
     return max && Number.isFinite(number) ? `${Math.min(100, (number / max) * 100).toFixed(1)}%` : "0%";
   };
   // Excel's status bar: average, count and sum of the first summed column, over every row.
+  // Numeric columns align right (and themes may set their numerals): numbers, or text that is a number.
+  const numeric = createMemo(() => new Set(props.definition.columns
+    .filter((column) => column.format?.style !== "text" && column.format?.style !== "date" && (column.aggregate !== undefined
+      || props.result.rows.some((row) => typeof row[column.key] === "number")))
+    .map((column) => column.key)));
   const statusColumn = () => props.definition.columns.find((c) => c.bar && c.aggregate === "sum")
     ?? props.definition.columns.find((c) => c.aggregate === "sum");
   const status = createMemo(() => {
@@ -862,7 +873,7 @@ function Dataset(props: {
                     <tr>
                       <For each={props.definition.columns}>
                         {(column) => (
-                          <th scope="col" aria-sort={sortFor(column.key) === "asc" ? "ascending" : sortFor(column.key) === "desc" ? "descending" : undefined}>
+                          <th scope="col" class={numeric().has(column.key) ? "num" : undefined} aria-sort={sortFor(column.key) === "asc" ? "ascending" : sortFor(column.key) === "desc" ? "descending" : undefined}>
                             {/* Print uses plain text: Chrome repeats header rows on each page but drops button text. */}
                             <Show when={!printing()}
                               fallback={`${column.label}${sortFor(column.key) === "asc" ? " ▲" : sortFor(column.key) === "desc" ? " ▼" : ""}`}>
@@ -903,7 +914,7 @@ function Dataset(props: {
                               const clickable = () => interactive().has(column.key) && !isOtherRow(row)
                                 && row[source] !== null && row[source] !== undefined;
                               return (
-                                <td class={column.bar ? "has-bar" : undefined}>
+                                <td class={[column.bar ? "has-bar" : "", numeric().has(column.key) ? "num" : ""].filter(Boolean).join(" ") || undefined}>
                                   <Show when={column.bar && !isOtherRow(row)}>
                                     <span class="data-bar" aria-hidden="true" style={{ width: barWidth(column, row[column.key]) }} />
                                   </Show>

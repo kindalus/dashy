@@ -52,6 +52,16 @@ metrics.revenue = { ...metrics.revenue!, sparkline: { dataset: "revenue_forecast
 export default defineProject({
   name: "Maven Electronics",
   description: "Global electronics retailer · sample data",
+  // A project theme: its stylesheet lives in extensions and is checked at build.
+  themes: {
+    maven: {
+      label: "Maven",
+      stylesheet: "./themes/maven.css",
+      extends: "power-bi",
+      // Pill buttons; inputs and panels keep Power BI's corners.
+      corners: { buttons: "rounded" },
+    },
+  },
   dataDir: "./data",
   params: {
     period: {

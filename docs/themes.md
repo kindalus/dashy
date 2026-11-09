@@ -30,11 +30,15 @@ theme: {
 
 ## Included themes
 
-These are Dashy interpretations of each visual style, using local font stacks.
-No remote fonts or theme resources are required.
+Zafir is Dashy's own theme and the default. The others are Dashy interpretations
+of each visual style. Nothing loads from other sites: Zafir's fonts (Space Grotesk,
+IBM Plex Sans and IBM Plex Mono, under the SIL Open Font License, notices in
+`public/licenses/`) are bundled; the other themes use local font stacks, and
+Cognos also picks up the bundled IBM Plex Sans.
 
 | Name          | Appearance                                                                              | Default corners |
 | ------------- | --------------------------------------------------------------------------------------- | --------------- |
+| `zafir` (default) | Warm greys, red #CE2529, a dark gradient top bar, Space Grotesk titles and figures, mono uppercase eyebrows, metrics between hairlines with one in red, tables with a red header rule | `none` |
 | `excel`       | White surfaces, green header, cell-like metric cards, formula bar and sheet tabs        | `none`          |
 | `chromeos`    | Pale blue canvas, rounded surfaces, blue accents and soft shadows                       | `rounded`       |
 | `chatgpt`     | White and neutral gray surfaces, charcoal controls, muted sage metrics                  | `rounded-lg`    |
@@ -44,8 +48,9 @@ No remote fonts or theme resources are required.
 | `microstrategy` | Cool gray canvas, slate top bar, red accents, blue/orange/teal data colors           | `rounded-sm`    |
 | `cognos`      | Neutral gray canvas, near-black top bar, square controls, blue accents, IBM Carbon-style categorical colors | `none`          |
 
-Omitting `theme` selects Excel. Omitting `name` also selects Excel. Omitting
-`corners` keeps the chosen theme's defaults. The Dashy symbol keeps its fixed
+Omitting `theme` or its `name` selects Zafir. Omitting `corners` keeps the chosen
+theme's defaults. Cognos shows filters as labelled fields; every other built-in
+theme uses chips. The Dashy symbol keeps its fixed
 shape and colors across themes. Sidebar links use gray tones distinct from the
 group headings; the active item uses the theme accent.
 
@@ -75,6 +80,65 @@ theme: {
   selectable: ["excel", "power-bi", "cognos"],
 },
 ```
+
+## Project themes
+
+A project can add its own themes, for example in its brand colours, without changing
+Dashy. Declare them next to the project's pages and give each a stylesheet in the
+extensions directory:
+
+```ts
+export default defineProject({
+  name: "Acme",
+  themes: {
+    acme: { label: "Acme", stylesheet: "./themes/acme.css", corners: "rounded" },
+    "acme-excel": { label: "Acme (Excel)", stylesheet: "./themes/acme-excel.css", extends: "excel" },
+  },
+  theme: { name: "acme", selectable: ["acme", "acme-excel", "zafir"] },
+  // …
+});
+```
+
+| Property | Meaning |
+| --- | --- |
+| `label` | Name in the theme selector. |
+| `stylesheet` | A `.css` file relative to the extensions directory. It is bundled with the build, so the first response already paints in it. |
+| `extends` | A built-in theme to start from. The page carries both names (`data-theme="excel acme-excel"`), so the base theme's tokens and signature apply and the stylesheet overrides what differs. |
+| `corners` | One style for inputs, buttons and panels, or per family (`{ buttons: "rounded" }`); families left out keep the base theme's, or `none`. |
+| `filters` | `chips` or `fields`; otherwise the base theme's, or `chips`. |
+
+Names are lowercase letters, digits and hyphens and cannot reuse a built-in name.
+Scope every rule to the theme, by word:
+
+```css
+:root[data-theme~="acme"] {
+  --accent: #1f6480;
+  --chart-1: #2a89af;
+  /* any other token */
+}
+:root[data-theme~="acme"] .button.primary {
+  background: #003e54;
+  color: #ffffff;
+}
+```
+
+Tokens a theme leaves out come from its base theme, then from Zafir, so a small
+theme cannot break the page. Fonts and images referenced with `url("./…")` relative
+to the stylesheet are bundled too; keep their licences with them.
+
+**Checks at build and at development start:**
+
+- **Errors stop the build:** a missing stylesheet, one outside the extensions
+  directory, an invalid property or name, and text below 4.5:1 contrast: text,
+  muted text, navigation, metric values, text on the accent, the top bar and
+  error messages.
+- **Warnings** (printed, the build continues): a chart palette that fails the
+  checks used for the built-in palettes (lightness, saturation, 3:1 against the
+  surface, neighbours that look alike for normal or colour-blind vision), and rules
+  outside `:root[data-theme~="<name>"]`, which would style every theme.
+
+The Maven sample includes a small `maven` theme that extends Power BI
+(`samples/maven-analytics/extensions/themes/maven.css`) to show the format.
 
 ## Independent corners
 
@@ -127,6 +191,7 @@ presentation; data, filters and exports are the same in every theme.
 
 | Theme | Signature |
 | --- | --- |
+| `zafir` | From the Zafir presentation template. A dark gradient top bar with mono uppercase text. An eyebrow above the title with a red square, as on Zafir slides. Space Grotesk titles and figures. Metrics are figures between hairlines, never boxes, and only the first is red. Tables have a red header rule and mono numerals. Charts are in focus: the main series in red, the rest in grey. |
 | `excel` | The top bar shows the dashboard and project. A formula bar below it shows the applied filters as one expression. Metric cards look like cells with a column reference (B, C, …). Tables are gridded, with column letters, in-cell data bars in a green gradient and a status line with average, count and sum. The main dashboards appear as sheet tabs at the bottom. |
 | `power-bi` | Filters move to a pane on the right, one card per filter (on screens wider than 1150 px). Metric cards show the value above its label. Block tools appear on hover or focus. The main dashboards appear as page tabs with a yellow marker. |
 | `microstrategy` | The main dashboards appear as chapters in the top bar, the current one underlined in red. Data panels have a title strip in small capitals. Changes and set filters use red chips. |
@@ -151,12 +216,14 @@ presentation; data, filters and exports are the same in every theme.
 
 ## Implementation
 
-`core/theme.ts` defines the typed names, corner styles, defaults and startup
-validation. Unknown theme names, styles and properties fail with a configuration
+`core/theme.ts` defines the built-in themes (label, default corners, filter style),
+validates project themes and resolves the theme for the catalog. `core/theme-check.ts`
+reads theme stylesheets and `core/palette.ts` holds the contrast and palette checks,
+shared by the tests and the project-theme checks in `scripts/extensions-plugin.ts`. Unknown theme names, styles and properties fail with a configuration
 error. The resolved theme is included in the catalog and emitted as HTML
 attributes during server rendering, so CSS applies before the first paint.
 
-`src/theme.css` imports the eight palettes from `src/themes/` and the shared
+`src/theme.css` imports the nine built-in themes from `src/themes/`, Zafir first because its tokens also sit on `:root` as the defaults, and the shared
 corner rules from `src/themes/corners.css`. `src/styles.css` uses semantic tokens
 such as `--metric-color`, `--nav-text`, `--radius-input`, `--radius-button` and
 `--radius-panel`. `src/charts.ts` reads chart tokens from computed styles.

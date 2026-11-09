@@ -1,4 +1,4 @@
-:root[data-theme="cognos"] {
+:root[data-theme~="cognos"] {
   color-scheme: light;
   --font-ui: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
   --canvas: #f4f4f4;
@@ -47,19 +47,19 @@
 
 /* Signature: Carbon-style layered tiles, light numerals, tags, underlined fields, a blue
    navigation indicator and an arrow on the primary button. */
-:root[data-theme="cognos"] .breadcrumb { display: none; }
-:root[data-theme="cognos"] .topbar-product { display: inline; margin-right: auto; color: #c6c6c6; }
-:root[data-theme="cognos"] .topbar-product::before { content: "Dashy"; margin-right: 10px; color: #f4f4f4; font-weight: 600; }
-:root[data-theme="cognos"] .block, :root[data-theme="cognos"] .filters { border-color: transparent; box-shadow: none; }
-:root[data-theme="cognos"] .metric-block { border-top: 0; }
-:root[data-theme="cognos"] .metric-value { font-weight: 300; font-size: clamp(20px, 14cqi, 42px); letter-spacing: 0; }
-:root[data-theme="cognos"] .metric-compare { width: fit-content; padding: 2px 8px; border-radius: 999px; background: #e0e0e0; color: #393939; }
-:root[data-theme="cognos"] .metric-compare.tone-good { background: #defbe6; color: #0e6027; }
-:root[data-theme="cognos"] .metric-compare.tone-bad { background: #ffd7d9; color: #a2191f; }
-:root[data-theme="cognos"] .metric-compare .metric-arrow { color: inherit; }
-:root[data-theme="cognos"] .filter-field input, :root[data-theme="cognos"] .filters .select-button, :root[data-theme="cognos"] .filters .chip-input { background: #f4f4f4; border: 0; border-bottom: 1px solid #8d8d8d; border-radius: 0; }
-:root[data-theme="cognos"] .nav-item[aria-current="page"] { background: #e0e0e0; color: #161616; box-shadow: inset 3px 0 #0f62fe; }
-:root[data-theme="cognos"] .button.primary { position: relative; padding-right: 44px; text-align: left; }
-:root[data-theme="cognos"] .button.primary::after { content: "→"; position: absolute; right: 14px; }
-:root[data-theme="cognos"] th { background: #e0e0e0; color: #161616; }
-:root[data-theme="cognos"] .metric-change { color: inherit; font-weight: 400; }
+:root[data-theme~="cognos"] .breadcrumb { display: none; }
+:root[data-theme~="cognos"] .topbar-product { display: inline; margin-right: auto; color: #c6c6c6; }
+:root[data-theme~="cognos"] .topbar-product::before { content: "Dashy"; margin-right: 10px; color: #f4f4f4; font-weight: 600; }
+:root[data-theme~="cognos"] .block, :root[data-theme~="cognos"] .filters { border-color: transparent; box-shadow: none; }
+:root[data-theme~="cognos"] .metric-block { border-top: 0; }
+:root[data-theme~="cognos"] .metric-value { font-weight: 300; font-size: clamp(20px, 14cqi, 42px); letter-spacing: 0; }
+:root[data-theme~="cognos"] .metric-compare { width: fit-content; padding: 2px 8px; border-radius: 999px; background: #e0e0e0; color: #393939; }
+:root[data-theme~="cognos"] .metric-compare.tone-good { background: #defbe6; color: #0e6027; }
+:root[data-theme~="cognos"] .metric-compare.tone-bad { background: #ffd7d9; color: #a2191f; }
+:root[data-theme~="cognos"] .metric-compare .metric-arrow { color: inherit; }
+:root[data-theme~="cognos"] .filter-field input, :root[data-theme~="cognos"] .filters .select-button, :root[data-theme~="cognos"] .filters .chip-input { background: #f4f4f4; border: 0; border-bottom: 1px solid #8d8d8d; border-radius: 0; }
+:root[data-theme~="cognos"] .nav-item[aria-current="page"] { background: #e0e0e0; color: #161616; box-shadow: inset 3px 0 #0f62fe; }
+:root[data-theme~="cognos"] .button.primary { position: relative; padding-right: 44px; text-align: left; }
+:root[data-theme~="cognos"] .button.primary::after { content: "→"; position: absolute; right: 14px; }
+:root[data-theme~="cognos"] th { background: #e0e0e0; color: #161616; }
+:root[data-theme~="cognos"] .metric-change { color: inherit; font-weight: 400; }

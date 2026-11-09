@@ -102,7 +102,7 @@ export class DashyEngine {
     const p = this.project;
     return {
       name: p.name,
-      theme: resolveTheme(p.theme),
+      theme: resolveTheme(p.theme, p.themes),
       description: p.description,
       locale: p.locale ?? "pt",
       timezone: p.timezone ?? "UTC",

@@ -54,7 +54,7 @@ export async function loadProject(
     locale: locale ?? base.locale ?? "pt",
     ...(theme === undefined
       ? {}
-      : { theme: resolveTheme({ name: theme as ThemeName, selectable: runtimeSelectable(base.theme?.selectable, theme as ThemeName) }) }),
+      : { theme: resolveTheme({ name: theme as ThemeName, selectable: runtimeSelectable(base.theme?.selectable, theme as ThemeName) }, base.themes) }),
   });
   return {
     ...project,

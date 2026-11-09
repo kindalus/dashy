@@ -1,0 +1,194 @@
+/* Zafir, the default theme. Taken from the Zafir presentation template: red #CE2529 on
+   warm ink and greys, a dark radial ground for structural moments, Space Grotesk for
+   titles and figures, IBM Plex Sans for text, IBM Plex Mono for uppercase labels,
+   square corners, square red markers and hairline rules rather than boxes. */
+@import "@fontsource/space-grotesk/latin-500.css";
+@import "@fontsource/space-grotesk/latin-700.css";
+@import "@fontsource/ibm-plex-sans/latin-400.css";
+@import "@fontsource/ibm-plex-sans/latin-500.css";
+@import "@fontsource/ibm-plex-sans/latin-600.css";
+@import "@fontsource/ibm-plex-mono/latin-400.css";
+@import "@fontsource/ibm-plex-mono/latin-500.css";
+
+/* As the default, these tokens also fill any token another theme leaves out. */
+:root,
+:root[data-theme~="zafir"] {
+  color-scheme: light;
+  --font-ui: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --canvas: #f6f5f4;
+  --surface: #ffffff;
+  --surface-hover: #edebea;
+  --sidebar: #ffffff;
+  --text: #231f20;
+  --muted: #6e686a;
+  --nav-text: #3a3638;
+  --nav-group: #6e686a;
+  --line: #e6e4e4;
+  --control-border: #939598;
+  --accent: #ce2529;
+  --accent-hover: #bd2024;
+  --accent-soft: #fbeaea;
+  --accent-border: #e8a3a5;
+  --on-accent: #ffffff;
+  --focus: #ce2529;
+  --header-background: #151314;
+  --header-text: #ffffff;
+  --header-border: #2c2527;
+  --header-badge-border: #3a3638;
+  --metric-color: #231f20;
+  --metric-border: #ce2529;
+  --metric-font-size: clamp(20px, 13cqi, 40px);
+  --panel-shadow: none;
+  --header-blur: none;
+  --table-heading: #ffffff;
+  --row-hover: #f6f5f4;
+  --danger: #a4262c;
+  --danger-border: #e3b3b6;
+  --danger-soft: #fdf3f4;
+  --chart-1: #ce2529;
+  --chart-2: #2f6fd0;
+  --chart-3: #a0720f;
+  --chart-4: #009d9a;
+  --chart-5: #7f56cf;
+  --chart-6: #c2408f;
+  --chart-grid-style: solid;
+  --chart-bar-radius: 0;
+  /* One highlight per view, in the brand red; the rest is context in grey. */
+  --chart-focus: on;
+  --chart-muted: #c9c5c6;
+  --chart-bar-style: solid;
+  --chart-grid: #e6e4e4;
+}
+
+/* Signature: dark structural top bar, mono uppercase eyebrows with a red square, Space
+   Grotesk titles and figures, metrics between hairlines (one in red), tables with a red
+   header rule and mono numerals, square red markers. */
+:root[data-theme~="zafir"] .topbar {
+  background: radial-gradient(120% 110% at 85% 0%, #2c2527 0%, #151314 60%);
+  border-bottom: 0;
+}
+:root[data-theme~="zafir"] .breadcrumb,
+:root[data-theme~="zafir"] .topbar-status {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #b9b5b6;
+  opacity: 1;
+}
+:root[data-theme~="zafir"] .breadcrumb strong {
+  color: #ffffff;
+  font-weight: 500;
+}
+:root[data-theme~="zafir"] .nav-label,
+:root[data-theme~="zafir"] .theme-picker > span {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+:root[data-theme~="zafir"] .nav-item[aria-current="page"] {
+  background: #f6f5f4;
+  color: #231f20;
+  box-shadow: inset 3px 0 #ce2529;
+}
+:root[data-theme~="zafir"] .page-eyebrow,
+:root[data-theme~="zafir"] .metric-block h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+:root[data-theme~="zafir"] .page-eyebrow {
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: #ce2529;
+}
+:root[data-theme~="zafir"] .page-eyebrow::before,
+:root[data-theme~="zafir"] .metric-block h2::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  background: #ce2529;
+}
+:root[data-theme~="zafir"] h1,
+:root[data-theme~="zafir"] .block-heading h2,
+:root[data-theme~="zafir"] .metric-value {
+  font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+  font-weight: 700;
+}
+:root[data-theme~="zafir"] h1 {
+  font-size: 34px;
+  letter-spacing: -0.03em;
+}
+:root[data-theme~="zafir"] .block-heading h2 {
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+/* Metrics are figures between hairlines, never boxes; the first is the one highlight. */
+:root[data-theme~="zafir"] .metric-block {
+  background: transparent;
+  border: 0;
+  border-left: 1px solid #e6e4e4;
+  border-radius: 0;
+  padding: 4px 22px;
+}
+:root[data-theme~="zafir"] .dashboard-grid > .metric-block:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+:root[data-theme~="zafir"] .metric-block h2 {
+  font-size: 11px;
+  color: #6e686a;
+}
+:root[data-theme~="zafir"] .metric-value {
+  margin-top: 14px;
+  letter-spacing: -0.03em;
+}
+:root[data-theme~="zafir"] .dashboard-grid > .metric-block:first-child .metric-value {
+  color: #ce2529;
+}
+:root[data-theme~="zafir"] .metric-description {
+  color: #6e686a;
+}
+:root[data-theme~="zafir"] .block {
+  box-shadow: none;
+}
+:root[data-theme~="zafir"] .chip-label {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+:root[data-theme~="zafir"] .filter-chip.is-set {
+  border-color: #ce2529;
+}
+:root[data-theme~="zafir"] th {
+  background: transparent;
+  border-bottom: 2px solid #ce2529;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #6e686a;
+}
+:root[data-theme~="zafir"] td {
+  border-bottom-color: #e6e4e4;
+}
+:root[data-theme~="zafir"] td.num {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12.5px;
+}
+:root[data-theme~="zafir"] .cross-filters .chip {
+  border-color: #ce2529;
+  background: #ffffff;
+}
+:root[data-theme~="zafir"] .drill-level {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}

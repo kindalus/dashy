@@ -444,6 +444,8 @@ export interface CacheConfig {
 export interface ProjectDefinition {
   name: string;
   theme?: import("./theme").ThemeConfig;
+  /** Themes this project adds, by name; each has a stylesheet in the extensions directory. */
+  themes?: Record<string, import("./theme").ProjectTheme>;
   description?: string;
   locale?: string;
   /** IANA timezone for relative defaults and DuckDB current_date, default UTC. */

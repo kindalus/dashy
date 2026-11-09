@@ -84,7 +84,7 @@ export default {
         () => (
           <html
             lang={catalog.locale.split("-")[0]}
-            data-theme={theme.name}
+            data-theme={theme.attribute}
             data-corners-inputs={theme.corners.inputs}
             data-corners-buttons={theme.corners.buttons}
             data-corners-panels={theme.corners.panels}

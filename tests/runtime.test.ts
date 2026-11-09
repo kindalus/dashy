@@ -151,7 +151,7 @@ test("CLI lists the filesystem samples and rejects missing names and invalid arg
       const invalidTheme = await cli([command, `--theme=${name}`]);
       expect(invalidTheme.code).toBe(1);
       expect(invalidTheme.err).toContain(
-        "Choose excel, chromeos, chatgpt, claude-code, macos, power-bi, microstrategy, cognos",
+        "Choose zafir, excel, chromeos, chatgpt, claude-code, macos, power-bi, microstrategy, cognos",
       );
     }
   }

@@ -1,5 +1,13 @@
 # Migration notes
 
+## Default theme: Zafir
+
+Projects that did not set `theme.name` used Excel and now use Zafir, Dashy's own
+theme. To keep Excel, set `theme: { name: "excel" }`. Viewers' saved choices are
+unchanged. Theme stylesheets now match by word (`:root[data-theme~="excel"]`), so a
+project theme can extend a built-in one; custom CSS that targeted
+`[data-theme="excel"]` should use `~=`.
+
 ## 0.2 to 0.3
 
 Breaking changes:

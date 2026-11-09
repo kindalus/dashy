@@ -307,6 +307,7 @@ main {
   display: none;
 }
 /* Theme signatures; each theme that uses one shows it. */
+.page-eyebrow,
 .formula-bar,
 .page-tabs,
 .table-sum,
@@ -425,6 +426,13 @@ main {
   fill: var(--accent);
 }
 /* In-cell bars sit behind the value. */
+td.num,
+th.num {
+  text-align: right;
+}
+th.num .sort-button {
+  margin-left: auto;
+}
 td.has-bar {
   position: relative;
   isolation: isolate;
@@ -1451,7 +1459,7 @@ tr.other-row td {
  * beforeprint so charts re-render with these colours; @media print covers print
  * paths that fire no events.
  */
-:root[data-theme="claude-code"][data-printing] {
+:root[data-theme~="claude-code"][data-printing] {
   color-scheme: light;
   --canvas: #ffffff;
   --surface: #ffffff;
@@ -1477,7 +1485,7 @@ tr.other-row td {
   --chart-grid: #e4dfd8;
 }
 @media print {
-  html:root[data-theme="claude-code"] {
+  html:root[data-theme~="claude-code"] {
     color-scheme: light;
     --canvas: #ffffff;
     --surface: #ffffff;

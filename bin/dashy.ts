@@ -19,7 +19,7 @@ Without --with-sample, Dashy loads ./dashy.config.ts (empty by default).
 Samples are read in place. Your project configuration is never overwritten.
 --theme selects a theme and its default corners for this run.
 --locale overrides the project's formatting locale (default: pt).
-Themes: ${themeNames.join(", ")}.
+Built-in themes: ${themeNames.join(", ")}. Projects can add their own.
 DASHY_PROJECT_DIR selects an external implementation. DASHY_CONFIG,
 DASHY_ARTIFACTS_DIR, DASHY_EXTENSIONS_DIR and DASHY_DATA_DIR override its paths.
 DASHY_THEME and DASHY_LOCALE override configured presentation defaults.`;
