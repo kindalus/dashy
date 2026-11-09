@@ -469,7 +469,12 @@ export interface ProjectDefinition {
   /** Themes this project adds, by name; each has a stylesheet in the extensions directory. */
   themes?: Record<string, import("./theme").ProjectTheme>;
   description?: string;
+  /** Formatting locale for numbers and dates, default pt. */
   locale?: string;
+  /** Default interface language (en or pt); otherwise derived from `locale`. */
+  language?: import("./i18n").Language;
+  /** Languages viewers may choose in the sidebar, default all; false or [] hides the selector. */
+  languages?: false | readonly import("./i18n").Language[];
   /** IANA timezone for relative defaults and DuckDB current_date, default UTC. */
   timezone?: string;
   /** Paths in sources are resolved against this directory, never supplied by requests. */
@@ -555,7 +560,10 @@ export interface Catalog {
   name: string;
   theme: import("./theme").ResolvedTheme;
   description?: string;
+  /** The project's formatting locale; a viewer's language choice may change the locale used on screen. */
   locale: string;
+  /** Default interface language and the languages viewers may choose. */
+  language: import("./i18n").ResolvedLanguage;
   timezone: string;
   params: Record<string, ParamDefinition>;
   dashboards: Record<string, DashboardDefinition>;

@@ -1,5 +1,18 @@
 # Migration notes
 
+## Interface language
+
+Dashy's interface now follows a language, English or Portuguese. Without `language`
+in the project it is derived from `locale`, whose default is `pt`, so projects that
+did not set a locale now show a Portuguese interface (they already formatted
+numbers in Portuguese). Set `language: "en"` to keep English. Viewers can switch
+language in the sidebar (cookie `dashy_language`); set `languages: false` to hide
+the selector. Exports follow the viewer's language too: the Excel Filters sheet is
+named Filtros in Portuguese, and Top N's remainder row is Outros unless the dataset
+sets `topN.otherLabel`. Custom pages receive `language` in `PageProps`, and their
+`locale` is now the viewer's formatting locale. `createAuth` accepts `language` for
+its sign-in pages, which otherwise follow the viewer's choice or the browser.
+
 ## Default theme: Zafir
 
 Projects that did not set `theme.name` used Excel and now use Zafir, Dashy's own

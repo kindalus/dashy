@@ -42,11 +42,13 @@ import { chartKeyColumns } from "../core/charts";
 import { Select } from "./select";
 import { applyTopN, isOtherRow, labelColumn, shapeTable, summaryLabel, topNChoices, type TableRow } from "../core/tables";
 import { compareMetric, sparklinePaths, targetProgress } from "./metric-compare";
-import { describeFilters, filterValue } from "../core/filters";
+import { describeFilters, filterValue, isUnset } from "../core/filters";
 import { installPrint, printing } from "./print";
 import type { ChartSnapshot } from "./chart";
 import type { ThemeName } from "../core/theme";
 import { applyTheme, ThemeContext, useActiveTheme } from "./theme-picker";
+import { applyLanguage, LocaleContext, useLocale, useText } from "./language-picker";
+import { formattingLocale, languageOf, textFor, type Language } from "../core/i18n";
 import { FilterBar } from "./filter-bar";
 
 export interface AppProps {
@@ -55,21 +57,32 @@ export interface AppProps {
   page?: PageShell;
   /** The theme rendered for this viewer: the project theme or their saved choice. */
   theme?: ThemeName;
+  /** The interface language rendered for this viewer: the project's or their saved choice. */
+  language?: Language;
 }
 export function App(props: AppProps & { Page?: Component<PageProps> }) {
   const selected = props.page ? `/pages/${props.page.id}` : props.dashboard ? `/dashboards/${props.dashboard.id}` : undefined;
   const [theme, setTheme] = createSignal<ThemeName>(untrack(() => props.theme ?? props.catalog.theme.name));
   const changeTheme = (name: ThemeName) => setTheme(applyTheme(props.catalog.theme, name));
+  const [language, setLanguage] = createSignal<Language>(untrack(() =>
+    props.language ?? props.catalog.language?.name ?? languageOf(props.catalog.locale)));
+  const changeLanguage = (name: Language) => setLanguage(applyLanguage(props.catalog.language, name));
+  // Numbers and dates follow the chosen language, keeping the project locale when it matches.
+  const locale = () => formattingLocale(props.catalog.locale, language());
+  const t = () => textFor(locale());
   const [status, setStatus] = createSignal<PageStatus>({ text: "" });
   return <ThemeContext value={theme}>
-    <Workspace catalog={props.catalog} selected={selected}
-      label={props.page?.definition.label ?? props.dashboard?.definition.label}
-      kind={props.page ? "Pages" : "Dashboards"}
-      theme={theme()} onThemeChange={changeTheme} status={status()}>
-      {props.page && props.Page
-        ? <PageContent page={props.page} catalog={props.catalog} component={props.Page} />
-        : <DashboardContent {...props} onStatus={setStatus} />}
-    </Workspace>
+    <LocaleContext value={locale}>
+      <Workspace catalog={props.catalog} selected={selected}
+        label={props.page?.definition.label ?? props.dashboard?.definition.label}
+        kind={props.page ? t().pages : t().dashboards}
+        theme={theme()} onThemeChange={changeTheme}
+        language={language()} onLanguageChange={changeLanguage} status={status()}>
+        {props.page && props.Page
+          ? <PageContent page={props.page} catalog={props.catalog} component={props.Page} />
+          : <DashboardContent {...props} onStatus={setStatus} />}
+      </Workspace>
+    </LocaleContext>
   </ThemeContext>;
 }
 
@@ -100,7 +113,10 @@ export interface BlockInteraction {
 
 function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) => void }) {
   const [shell, setShell] = createSignal(untrack(() => props.dashboard));
-  let loader = untrack(() => props.dashboard) ? new DashboardLoader(untrack(() => props.dashboard)!, (state) => setLoads(state)) : undefined;
+  const locale = useLocale();
+  const t = useText();
+  let loader = untrack(() => props.dashboard)
+    ? new DashboardLoader(untrack(() => props.dashboard)!, (state) => setLoads(state), fetch, untrack(t).unableToLoadData) : undefined;
   const [loads, setLoads] = createSignal<DashboardLoads>(loader?.state || {});
   const [draft, setDraft] = createSignal<Params>(untrack(() => ({ ...props.dashboard?.params })));
   const [menu, setMenu] = createSignal<MenuState>();
@@ -108,7 +124,6 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
   // Plain copy for building URLs synchronously; the signal drives the back link.
   let fromParam: string | null = null;
   const definition = () => shell()?.definition;
-  const locale = () => props.catalog.locale;
   const groupIds = createMemo(() => new Map(shell()?.requests.flatMap(
     (group) => group.blockIds.map((id) => [id, group.id] as const),
   )));
@@ -123,19 +138,19 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
     return next;
   });
   const updateStatus = createMemo(() => {
-    if (!shell()) return "No dashboards configured";
+    if (!shell()) return t().noDashboards;
     if (shell()!.missing.length) return "";
     const groups = Object.values(loads());
     const pending = groups.filter((group) => group.loading).length;
-    if (pending) return `Loading data (${groups.length - pending}/${groups.length})…`;
+    if (pending) return t().loadingData(groups.length - pending, groups.length);
     if (groups.some((group) =>
       group.error || group.data?.blocks.some((block) => block.type === "error"),
     ))
-      return "Some data could not be loaded. Retry the affected panels.";
+      return t().someDataFailed;
     const updated = groups.map((group) => group.data?.generatedAt || "")
       .sort().at(-1);
-    if (!updated) return "No blocks configured";
-    return `Updated ${new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }).format(new Date(updated))} UTC`;
+    if (!updated) return t().noBlocks;
+    return t().updatedAt(new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }).format(new Date(updated)));
   });
   // Report the status and how long the last load took, for the top bar and the terminal status line.
   let loadStarted = 0;
@@ -180,11 +195,11 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
       // Request groups depend on cross-filters and required filters, so ask the server.
       const response = await fetch(`/api/dashboard-shell/${encodeURIComponent(current.id)}?${query}`, { credentials: "same-origin" });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error || "Unable to apply filters");
+      if (!response.ok) throw new Error(body.error || t().unableToApplyFilters);
       if (run !== generation) return;
       const next = body as DashboardShell;
       loader?.dispose();
-      loader = new DashboardLoader(next, (state) => setLoads(state));
+      loader = new DashboardLoader(next, (state) => setLoads(state), fetch, t().unableToLoadData);
       setShell(next);
       setDraft({ ...next.params });
       setLoads(loader.state);
@@ -194,7 +209,7 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
     } catch (error) {
       if (run !== generation) return;
       setLoads(Object.fromEntries(current.requests.map(({ id }) => [id, {
-        ...loads()[id], loading: false, error: error instanceof Error ? error.message : "Unable to apply filters",
+        ...loads()[id], loading: false, error: error instanceof Error ? error.message : t().unableToApplyFilters,
       }])));
     }
   }
@@ -299,9 +314,9 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
         ...(current.definition.unfiltered?.[blockId] ?? []),
       ]);
       // Only filters that narrow the data, so the caption stays short.
-      const set = (name: string) => filterValue(current.params[name], props.catalog.params[name]!) !== "All";
+      const set = (name: string) => !isUnset(current.params[name]);
       const filters = describeFilters((current.definition.params ?? []).filter((name) => !ignored.has(name) && set(name)),
-        current.params, props.catalog.params);
+        current.params, props.catalog.params, {}, t());
       const block = blocks().get(blockId);
       const path = current.drilldowns[blockId] ?? [];
       const drill = block?.type === "dataset" && path.length
@@ -317,8 +332,8 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
     const current = shell();
     if (!current) return "";
     const parts = (current.definition.params ?? [])
-      .map((name) => `${props.catalog.params[name]!.label} = ${filterValue(current.params[name], props.catalog.params[name]!)}`);
-    return `=FILTER(${parts.join("; ")})`;
+      .map((name) => `${props.catalog.params[name]!.label} = ${filterValue(current.params[name], props.catalog.params[name]!, t())}`);
+    return `=${t().formulaFunction}(${parts.join("; ")})`;
   };
   // Metric cards in order take columns B, C, …, as if column A held row labels.
   const cellRef = (id: string) => {
@@ -332,8 +347,8 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
     if (!current) return "";
     const notes: Record<string, string> = {};
     for (const origin of current.crossFilters)
-      notes[origin.param] = `not applied to ${current.labels[origin.block] ?? origin.block}`;
-    return describeFilters(current.definition.params ?? [], current.params, props.catalog.params, notes);
+      notes[origin.param] = t().notAppliedTo(current.labels[origin.block] ?? origin.block);
+    return describeFilters(current.definition.params ?? [], current.params, props.catalog.params, notes, t());
   };
   return (
     <>
@@ -353,13 +368,13 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
             <div>
               {/* An eyebrow with the navigation group; themes that use it show it. */}
               <Show when={definition()}>
-                <span class="page-eyebrow" aria-hidden="true">{definition()?.group ?? "Dashboards"}</span>
+                <span class="page-eyebrow" aria-hidden="true">{definition()?.group ?? t().dashboards}</span>
               </Show>
-              <h1>{definition()?.label || "Your dashboards"}</h1>
+              <h1>{definition()?.label || t().yourDashboards}</h1>
               <p>
                 {definition()
                   ? definition()?.description
-                  : "Add a dashboard to your project configuration to get started."}
+                  : t().getStarted}
               </p>
             </div>
             <div class="page-side">
@@ -368,12 +383,12 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
               </div>
               <Show when={shell() && !shell()!.missing.length}>
                 <div class="page-actions">
-                  <button class="button secondary" onClick={() => print()}>Print / PDF</button>
+                  <button class="button secondary" onClick={() => print()}>{t().print}</button>
                   <button
                     class="button secondary"
                     onClick={() => void apply(shell()!.params, shell()!.crossFilters, true)}
                   >
-                    Refresh
+                    {t().refresh}
                   </button>
                 </div>
               </Show>
@@ -401,18 +416,18 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
                 prompt={`dashy ${shell()?.id ?? ""}`}
               />
               <div class="filter-actions">
-                <button class="button primary" type="submit">Apply filters</button>
-                <button class="button text" type="button" onClick={() => { location.href = location.pathname; }}>Reset</button>
+                <button class="button primary" type="submit">{t().applyFilters}</button>
+                <button class="button text" type="button" onClick={() => { location.href = location.pathname; }}>{t().reset}</button>
               </div>
             </form>
           </Show>
           <Show when={shell()?.crossFilters.length}>
-            <div class="cross-filters" aria-label="Active cross-filters">
+            <div class="cross-filters" aria-label={t().activeCrossFilters}>
               <For each={shell()!.crossFilters}>
                 {(origin) => (
                   <span class="chip">
                     {props.catalog.params[origin.param]?.label}: {String(shell()!.params[origin.param] ?? "")}
-                    <button type="button" aria-label={`Clear ${props.catalog.params[origin.param]?.label} filter`}
+                    <button type="button" aria-label={t().clearFilter(props.catalog.params[origin.param]?.label ?? origin.param)}
                       onClick={() => run(origin.block, { kind: "clear", param: origin.param, label: "", display: "" })}>×</button>
                   </span>
                 )}
@@ -421,14 +436,13 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
           </Show>
           <Show when={shell()?.missing.length}>
             <div class="required-state" role="status">
-              Select {shell()!.missing.map((name) => props.catalog.params[name]?.label ?? name).join(", ")} to load this dashboard.
+              {t().selectToLoad(shell()!.missing.map((name) => props.catalog.params[name]?.label ?? name).join(", "))}
             </div>
           </Show>
-          <noscript>Enable JavaScript to load dashboard data.</noscript>
           <Show when={shell() && !shell()!.missing.length}>
             <section
               class="dashboard-grid"
-              aria-label="Dashboard results"
+              aria-label={t().dashboardResults}
             >
               <For each={definition()?.blocks || []} keyed={(block) => block.id}>
                 {(layout) => (
@@ -458,11 +472,12 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
 
 function ActionMenu(props: { state: MenuState; close: () => void; run: (action: ClickAction) => void }) {
   let element!: HTMLDivElement;
+  const t = useText();
   const label = (action: ClickAction) =>
-    action.kind === "drill" ? `Drill down to ${action.label}`
-    : action.kind === "filter" ? `Filter by ${action.label}`
-      : action.kind === "clear" ? `Clear ${action.label} filter`
-        : `Open ${action.label}`;
+    action.kind === "drill" ? t().drillDownTo(action.label)
+    : action.kind === "filter" ? t().filterBy(action.label)
+      : action.kind === "clear" ? t().clearFilter(action.label)
+        : t().open(action.label);
   onSettled(() => {
     // Keep the menu inside the viewport and move focus into it.
     const rect = element.getBoundingClientRect();
@@ -512,6 +527,7 @@ function DashboardCard(props: {
   const dataset = () =>
     props.block?.type === "dataset" ? props.block : undefined;
   const error = () => (props.block?.type === "error" ? props.block : undefined);
+  const t = useText();
   return (
     <article
       class={`block ${props.layout.type === "metric" ? "metric-block" : "data-block"}`}
@@ -534,9 +550,9 @@ function DashboardCard(props: {
         <Show when={error()}>
           {(block) => (
             <div class="block-error">
-              <h2>Block unavailable</h2>
+              <h2>{t().blockUnavailable}</h2>
               <p>{block().message}</p>
-              <button class="button secondary" onClick={props.retry}>Try again</button>
+              <button class="button secondary" onClick={props.retry}>{t().tryAgain}</button>
             </div>
           )}
         </Show>
@@ -578,10 +594,10 @@ function DashboardCard(props: {
                   <div class="metric-target">
                     <div class="metric-target-track" role="meter" aria-label={goal().label}
                       aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(goal().ratio * 100)}
-                      aria-valuetext={`${goal().percent} of ${goal().label} ${goal().target}`}>
+                      aria-valuetext={t().ofTarget(goal().percent, goal().label, goal().target)}>
                       <div class="metric-target-fill" style={{ width: `${goal().ratio * 100}%` }} />
                     </div>
-                    <span aria-hidden="true">{goal().percent} of {goal().label} {goal().target}</span>
+                    <span aria-hidden="true">{t().ofTarget(goal().percent, goal().label, goal().target)}</span>
                   </div>
                 )}
               </Show>
@@ -621,20 +637,20 @@ function DashboardCard(props: {
           )}
         </Show>
         <Show when={props.unfiltered.length && props.block}>
-          <p class="unfiltered-note">Not filtered by {props.unfiltered.join(", ")}</p>
+          <p class="unfiltered-note">{t().notFilteredBy(props.unfiltered.join(", "))}</p>
         </Show>
       </div>
       <Show when={props.loadError && !props.loading}>
         <div class="block-error" role="alert">
           <p>{props.loadError}</p>
-          <Show when={props.block}><p>Showing previous data.</p></Show>
-          <button class="button secondary" onClick={props.retry}>Try again</button>
+          <Show when={props.block}><p>{t().showingPreviousData}</p></Show>
+          <button class="button secondary" onClick={props.retry}>{t().tryAgain}</button>
         </div>
       </Show>
       <Show when={props.loading}>
         <div class="block-loading">
           <Spinner />
-          <span>{props.block ? "Updating…" : "Loading…"}</span>
+          <span>{props.block ? t().updating : t().loading}</span>
         </div>
       </Show>
     </article>
@@ -658,18 +674,19 @@ function ExportMenu(props: {
     else document.removeEventListener("pointerdown", outside);
   };
   onSettled(() => () => document.removeEventListener("pointerdown", outside));
+  const t = useText();
   return (
     <details class="export-menu" ref={element} onToggle={toggle}
       onKeyDown={(event) => { if (event.key === "Escape" && element.open) { close(); element.querySelector("summary")?.focus(); } }}>
-      <summary aria-label={`Download ${props.label}`}>Download</summary>
+      <summary aria-label={t().downloadBlock(props.label)}>{t().download}</summary>
       <div class="export-options" onClick={close}>
         <a href={props.href("csv")} download>CSV</a>
         <a href={props.href("xlsx")} download>Excel (.xlsx)</a>
         <Show when={props.image}>
           {(image) => (
             <>
-              <button type="button" onClick={() => image()("png")}>Image (.png)</button>
-              <button type="button" onClick={() => image()("svg")}>Image (.svg)</button>
+              <button type="button" onClick={() => image()("png")}>{t().imagePng}</button>
+              <button type="button" onClick={() => image()("svg")}>{t().imageSvg}</button>
             </>
           )}
         </Show>
@@ -695,8 +712,9 @@ function Dataset(props: {
   const [sort, setSort] = createSignal<TableSort | undefined>(untrack(() => props.definition.defaultSort));
   const [limit, setLimit] = createSignal(untrack(() =>
     props.definition.topN ? topNChoices(props.definition.topN).initial : 0));
+  const t = useText();
   const complete = () => !props.result.truncated;
-  const ranked = createMemo(() => applyTopN(props.result.rows, props.definition, limit(), complete()));
+  const ranked = createMemo(() => applyTopN(props.result.rows, props.definition, limit(), complete(), t().other));
   // Charts and tables show the same Top N rows; the table also sorts, groups and totals them.
   const shown = createMemo(() => ranked().rows === props.result.rows
     ? props.result : { ...props.result, rows: [...ranked().rows] });
@@ -738,7 +756,7 @@ function Dataset(props: {
       await saveChartImage({ ...shot, title: props.definition.label, caption: props.interaction.caption() }, type, props.interaction.filename());
     } catch (error) {
       console.error("[dashy] Image export failed", error);
-      setImageError("The image could not be saved. Try the other format or Print / PDF.");
+      setImageError(t().imageFailed);
     }
   };
   const sortFor = (key: string) => sort()?.column === key ? sort()!.direction : undefined;
@@ -748,9 +766,9 @@ function Dataset(props: {
   const totalLabel = () => labelColumn(props.definition);
   // Truncated results skip what would be wrong on partial data.
   const unavailable = () => [
-    props.definition.totals || props.definition.subtotals ? "totals" : "",
+    props.definition.totals || props.definition.subtotals ? t().totals : "",
     props.definition.topN ? "Top N" : "",
-  ].filter(Boolean).join(" and ");
+  ].filter(Boolean).join(` ${t().and} `);
   const interactive = createMemo(() => new Set(props.interaction.columns(props.definition).map((c) => c.key)));
   // In-cell bars scale to each column's largest absolute value among the rows shown.
   const barMax = createMemo(() => {
@@ -823,11 +841,11 @@ function Dataset(props: {
           image={view() === "chart" && props.definition.chart ? saveImage : undefined} />
         <Show when={props.definition.topN}>
           {(topN) => (
-            <Select class="top-n" id={`${props.id}-top-n`} label={`Rows shown in ${props.definition.label}`}
+            <Select class="top-n" id={`${props.id}-top-n`} label={t().rowsShownIn(props.definition.label)}
               disabled={!complete()} value={String(complete() ? limit() : 0)}
               options={[
-                ...topNChoices(topN()).options.map((n) => ({ value: String(n), label: `${topN().order === "bottom" ? "Bottom" : "Top"} ${n}` })),
-                { value: "0", label: "All" },
+                ...topNChoices(topN()).options.map((n) => ({ value: String(n), label: topN().order === "bottom" ? t().bottom(n) : t().top(n) })),
+                { value: "0", label: t().all },
               ]}
               onChange={(value) => setLimit(Number(value))} />
           )}
@@ -836,19 +854,19 @@ function Dataset(props: {
           <div
             class="view-toggle"
             role="group"
-            aria-label={`View ${props.definition.label}`}
+            aria-label={t().viewOf(props.definition.label)}
           >
             <button
               aria-pressed={view() === "chart" ? "true" : "false"}
               onClick={() => setView("chart")}
             >
-              Chart
+              {t().chart}
             </button>
             <button
               aria-pressed={view() === "table" ? "true" : "false"}
               onClick={() => setView("table")}
             >
-              Table
+              {t().table}
             </button>
           </div>
         </Show>
@@ -858,7 +876,7 @@ function Dataset(props: {
         when={props.result.rows.length}
         fallback={
           <div class="empty-state">
-            No results for these filters. Try a different period or selection.
+            {t().noResults}
           </div>
         }
       >
@@ -870,7 +888,7 @@ function Dataset(props: {
                 class="table-scroll"
                 tabindex={0}
                 role="region"
-                aria-label={`${props.definition.label} table`}
+                aria-label={t().tableOf(props.definition.label)}
               >
                 <table>
                   <thead>
@@ -905,7 +923,7 @@ function Dataset(props: {
                             {(column) => (
                               <td>
                                 {column.key === entry.column
-                                  ? summaryLabel(formatValue(entry.row[column.key] ?? null, column.format, props.locale))
+                                  ? summaryLabel(formatValue(entry.row[column.key] ?? null, column.format, props.locale), t())
                                   : column.aggregate ? formatValue(entry.row[column.key] ?? null, column.format, props.locale) : ""}
                               </td>
                             )}
@@ -947,7 +965,7 @@ function Dataset(props: {
                           <For each={props.definition.columns}>
                             {(column) => (
                               <td>
-                                {column.key === totalLabel() ? "Total"
+                                {column.key === totalLabel() ? t().total
                                   : column.aggregate ? formatValue(totals()[column.key] ?? null, column.format, props.locale) : ""}
                               </td>
                             )}
@@ -962,36 +980,38 @@ function Dataset(props: {
                 {(s) => (
                   <p class="table-sum">
                     <span>{s().label}</span>
-                    <span>Average: {formatValue(s().average, { ...s().format, compact: true }, props.locale)}</span>
-                    <span>Count: {s().count}</span>
-                    <span>Sum: {formatValue(s().sum, { ...s().format, compact: true }, props.locale)}</span>
+                    <span>{t().average}: {formatValue(s().average, { ...s().format, compact: true }, props.locale)}</span>
+                    <span>{t().count}: {s().count}</span>
+                    <span>{t().sum}: {formatValue(s().sum, { ...s().format, compact: true }, props.locale)}</span>
                   </p>
                 )}
               </Show>
               <div class="table-footer">
                 <span>
-                  {ranked().hidden ? `${props.definition.topN?.order === "bottom" ? "Bottom" : "Top"} ${ranked().rows.filter((row) => !isOtherRow(row)).length} of ${props.result.rows.length} rows` : `${props.result.rows.length} rows`}
-                  {props.result.truncated ? ` · Row limit reached${unavailable() ? `; ${unavailable()} unavailable` : ""}` : ""}
+                  {ranked().hidden
+                    ? t().rankedRows((props.definition.topN?.order === "bottom" ? t().bottom : t().top)(ranked().rows.filter((row) => !isOtherRow(row)).length), props.result.rows.length)
+                    : t().rows(props.result.rows.length)}
+                  {props.result.truncated ? ` · ${t().rowLimitReached}${unavailable() ? `; ${t().unavailable(unavailable())}` : ""}` : ""}
                   {printing() && table().rows.length > PRINT_ROWS
-                    ? ` · Printed the first ${PRINT_ROWS.toLocaleString(props.locale)} rows; download CSV or Excel for all` : ""}
+                    ? ` · ${t().printedFirst(PRINT_ROWS.toLocaleString(props.locale))}` : ""}
                 </span>
                 <div>
                   <button
-                    aria-label={`Previous page of ${props.definition.label}`}
+                    aria-label={t().previousPageOf(props.definition.label)}
                     disabled={currentPage() === 0}
                     onClick={() => setPage((p) => p - 1)}
                   >
-                    Previous
+                    {t().previous}
                   </button>
                   <span>
                     {currentPage() + 1} / {pageCount()}
                   </span>
                   <button
-                    aria-label={`Next page of ${props.definition.label}`}
+                    aria-label={t().nextPageOf(props.definition.label)}
                     disabled={currentPage() + 1 >= pageCount()}
                     onClick={() => setPage((p) => p + 1)}
                   >
-                    Next
+                    {t().next}
                   </button>
                 </div>
               </div>
@@ -1022,16 +1042,17 @@ function drillValue(definition: DatasetDefinition, depth: number, value: string,
 function DrillPath(props: { definition: DatasetDefinition; path: readonly string[]; locale: string; go: (depth: number) => void }) {
   const levels = () => props.definition.drilldown ?? [];
   const depth = () => props.path.length;
+  const t = useText();
   return (
     <Show when={depth() > 0} fallback={
       <p class="drill-hint">
-        Click a {levelLabel(props.definition, 0).toLowerCase()} to drill down to {levelLabel(props.definition, 1).toLowerCase()}
+        {t().drillHint(levelLabel(props.definition, 0).toLowerCase(), levelLabel(props.definition, 1).toLowerCase())}
       </p>
     }>
-      <nav class="drill-path" aria-label={`${props.definition.label} drill-down`}>
-        <button type="button" class="drill-up" aria-label="Up one level" onClick={() => props.go(depth() - 1)}>↑</button>
+      <nav class="drill-path" aria-label={t().drillDownOf(props.definition.label)}>
+        <button type="button" class="drill-up" aria-label={t().upOneLevel} onClick={() => props.go(depth() - 1)}>↑</button>
         <ol>
-          <li><button type="button" onClick={() => props.go(0)}>All</button></li>
+          <li><button type="button" onClick={() => props.go(0)}>{t().all}</button></li>
           <For each={[...props.path]}>
             {(value, index) => (
               <li>

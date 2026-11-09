@@ -2,6 +2,7 @@ import { QuerySession } from "./query-session";
 import { builtInAdapters, type SourceAdapter } from "./sources";
 import { defineProject } from "./project";
 import { resolveTheme } from "./theme";
+import { resolveLanguage } from "./i18n";
 import { DashyError, hasQueryOptions, isDashyError, parseParams, selectParams } from "./params";
 import { identifier, sql } from "./sql";
 import { todayIn } from "./dates";
@@ -108,6 +109,7 @@ export class DashyEngine {
       theme: resolveTheme(p.theme, p.themes),
       description: p.description,
       locale: p.locale ?? "pt",
+      language: resolveLanguage(p),
       timezone: p.timezone ?? "UTC",
       params: p.params,
       pages: Object.fromEntries(Object.entries(p.pages ?? {})

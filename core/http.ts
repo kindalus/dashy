@@ -4,6 +4,14 @@ import { exportFile, readExportOptions } from "./export";
 import { describeDrilldown, readDrilldowns } from "./drilldown";
 import { DashyError, isDashyError, readParams } from "./params";
 import type { AuthResult, Principal } from "./types";
+import {
+  formattingLocale, messages, readLanguageCookie, resolveLanguage, viewerLanguage, type Language,
+} from "./i18n";
+
+/** The viewer's interface language: their saved choice when the project offers it. */
+export function requestLanguage(engine: DashyEngine, request: Request): Language {
+  return viewerLanguage(resolveLanguage(engine.project), readLanguageCookie(request.headers.get("Cookie")));
+}
 
 export interface Authentication {
   principal?: Principal;
@@ -72,20 +80,25 @@ export function errorResponse(error: unknown, extra?: Headers): Response {
   );
 }
 const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-/** Minimal HTML error page for browser navigation; data requests keep JSON. */
-export function errorPage(error: unknown, extra?: Headers): Response {
+/** Minimal HTML error page for browser navigation, in the viewer's language; data requests keep JSON. */
+export function errorPage(error: unknown, extra?: Headers, language: Language = "en"): Response {
   if (!isDashyError(error)) console.error("[dashy] Request failed", error);
+  const t = messages[language];
   const status = isDashyError(error) ? error.status : 500;
-  const message = isDashyError(error) ? error.message : "Unable to complete the request. Check the server logs.";
-  const titles: Record<number, string> = { 401: "Sign in required", 403: "Access denied", 404: "Not found", 503: "Temporarily unavailable" };
+  // The engine's own page errors have translations; project errors keep their text.
+  const known: Record<string, string> = {
+    "Page not found": t.pageNotFound, "Request URL is too long": t.urlTooLong, "Authentication required": t.authenticationRequired,
+  };
+  const message = isDashyError(error) ? known[error.message] ?? error.message : t.requestFailed;
+  const titles: Record<number, string> = { 401: t.signInRequired, 403: t.accessDenied, 404: t.notFound, 503: t.temporarilyUnavailable };
   const headers = errorHeaders(error, extra);
   headers.set("Content-Type", "text/html; charset=utf-8");
   headers.set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'");
-  const title = titles[status] ?? "Something went wrong";
+  const title = titles[status] ?? t.somethingWentWrong;
   return new Response(
-    `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title>`
+    `<!DOCTYPE html><html lang="${language}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title>`
     + `<style>body{font:16px system-ui,sans-serif;margin:0;display:grid;place-items:center;min-height:100vh;background:#f7f7f5;color:#1d1d1b}main{max-width:32rem;padding:2rem}a{color:inherit}</style></head>`
-    + `<body><main><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p><p><a href="/">Back to the workspace</a></p></main></body></html>`,
+    + `<body><main><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p><p><a href="/">${escapeHtml(t.backToWorkspace)}</a></p></main></body></html>`,
     { status, headers },
   );
 }
@@ -168,7 +181,7 @@ export function createApiHandler(engine: DashyEngine) {
             ],
             drilldown: describeDrilldown(block.definition, block.shell.drilldowns[group] ?? []) || undefined,
             params: engine.project.params, generatedAt: new Date(),
-            locale: engine.project.locale ?? "pt",
+            locale: formattingLocale(engine.project.locale ?? "pt", requestLanguage(engine, request)),
             options: options!,
           });
           const headers = new Headers(responseHeaders);

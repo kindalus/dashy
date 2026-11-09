@@ -11,6 +11,7 @@ import {
   authenticate,
   createApiHandler,
   errorPage,
+  requestLanguage,
   responseHeaders,
   type Authentication,
 } from "../core/http";
@@ -18,6 +19,7 @@ import { readCrossFilters } from "../core/engine";
 import { readDrilldowns } from "../core/drilldown";
 import { DashyError, readParams } from "../core/params";
 import { readThemeCookie, viewerTheme } from "../core/theme";
+import { messages } from "../core/i18n";
 import clientAssets from "./entry-client?assets=client";
 import serverAssets from "./entry-server?assets=ssr";
 
@@ -37,7 +39,7 @@ export default {
     if (url.pathname.startsWith("/api/")) return api(request);
     if (url.pathname === "/auth" || url.pathname.startsWith("/auth/")) {
       const response = await engine.project.authRoutes?.(request);
-      return response ?? errorPage(new DashyError("Page not found", 404));
+      return response ?? errorPage(new DashyError("Page not found", 404), undefined, requestLanguage(engine, request));
     }
     if (request.method !== "GET" && request.method !== "HEAD")
       return new Response("Method not allowed", {
@@ -60,9 +62,12 @@ export default {
       const id = match?.[2] || Object.keys(kind === "pages" ? catalog.pages ?? {} : catalog.dashboards)[0];
       const raw = readParams(url.searchParams, engine.project.params);
       const theme = viewerTheme(catalog.theme, readThemeCookie(request.headers.get("Cookie")));
+      // The viewer's language reaches the first response, like the theme: no flash of the other language.
+      const language = requestLanguage(engine, request);
       const props: AppProps = {
         catalog,
         theme: theme.name,
+        language,
         dashboard: id && kind === "dashboards"
           ? engine.dashboardShell(id, raw, principal, {
               crossFilters: readCrossFilters(url.searchParams), drilldowns: readDrilldowns(url.searchParams),
@@ -83,7 +88,7 @@ export default {
       const html = renderToString(
         () => (
           <html
-            lang={catalog.locale.split("-")[0]}
+            lang={language}
             data-theme={theme.attribute}
             data-corners-inputs={theme.corners.inputs}
             data-corners-buttons={theme.corners.buttons}
@@ -104,6 +109,8 @@ export default {
               <ForAssets assets={assets} />
             </head>
             <body>
+              {/* Outside the hydrated app: browsers without scripts never hydrate, so its text can follow the language. */}
+              {props.dashboard && <noscript><p class="noscript-note">{messages[language].enableJavaScript}</p></noscript>}
               <div id="app" innerHTML={appHTML} />
               <script
                 id="dashy-data"
@@ -134,7 +141,7 @@ export default {
         headers.set("Cache-Control", "no-store");
         return new Response(null, { status: 302, headers });
       }
-      return errorPage(error, auth?.headers);
+      return errorPage(error, auth?.headers, requestLanguage(engine, request));
     }
   },
 };

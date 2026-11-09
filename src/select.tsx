@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, Show, untrack } from "solid-js";
+import { useText } from "./language-picker";
 
 export interface SelectOption {
   value: string;
@@ -31,6 +32,7 @@ export function Select(props: {
   // createUniqueId matches between server rendering and hydration.
   const uid = untrack(() => props.id) ?? `select-${createUniqueId()}`;
   const listId = `${uid}-list`;
+  const t = useText();
   const [open, setOpen] = createSignal(false);
   const [active, setActive] = createSignal(-1);
   const [filter, setFilter] = createSignal("");
@@ -200,8 +202,8 @@ export function Select(props: {
               ref={search}
               type="search"
               class="popover-search"
-              placeholder="Filter options"
-              aria-label="Filter options"
+              placeholder={t().filterOptions}
+              aria-label={t().filterOptions}
               aria-controls={listId}
               aria-activedescendant={active() >= 0 ? optionId(active()) : undefined}
               value={filter()}
@@ -211,8 +213,8 @@ export function Select(props: {
           </Show>
           <ul id={listId} role="listbox" class="option-list" aria-labelledby={props.labelledBy ?? uid}
             style={{ "max-height": `${(place()?.maxHeight ?? 320) - (searchable() ? 48 : 0)}px` }}>
-            <Show when={props.loading}><li class="option-note">Loading…</li></Show>
-            <Show when={!props.loading && !visible().length}><li class="option-note">No options</li></Show>
+            <Show when={props.loading}><li class="option-note">{t().loading}</li></Show>
+            <Show when={!props.loading && !visible().length}><li class="option-note">{t().noOptions}</li></Show>
             <For each={visible()}>
               {(option, index) => (
                 <li

@@ -26,7 +26,7 @@ export default defineProject({
 });
 ```
 
-`createAuth` returns `{ authenticate, authRoutes }`; spreading it into the project enables both. Every query, metric, dataset, dashboard, page and custom API route can declare `roles`, and access requires a match at every level used.
+`createAuth` returns `{ authenticate, authRoutes }`; spreading it into the project enables both. Its pages (signed out, sign-in errors, access denied) use the viewer's interface language from the `dashy_language` cookie, then `language` (`"en"` or `"pt"`) if set, then the browser's `Accept-Language`, then English. Every query, metric, dataset, dashboard, page and custom API route can declare `roles`, and access requires a match at every level used.
 
 ## Session
 

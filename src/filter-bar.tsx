@@ -1,6 +1,8 @@
 import { createEffect, createSignal, For, Show, untrack } from "solid-js";
 import type { ParamDefinition, ParamValue, Params } from "../core/types";
-import { filterValue } from "../core/filters";
+import { filterValue, isUnset } from "../core/filters";
+import { textFor } from "../core/i18n";
+import { useText } from "./language-picker";
 import { ParameterControl } from "./controls";
 import { formatPeriod } from "./format";
 
@@ -16,8 +18,8 @@ export function chipValue(value: ParamValue | undefined, definition: ParamDefini
     const date = (text: string) => new Intl.DateTimeFormat(locale, { dateStyle: "short", timeZone: "UTC" }).format(new Date(`${text}T00:00:00Z`));
     return `${date(from)} – ${date(until)}`;
   }
-  if (Array.isArray(value) && value.length > 2) return `${value.length} selected`;
-  return filterValue(value, definition);
+  if (Array.isArray(value) && value.length > 2) return textFor(locale).selectedCount(value.length);
+  return filterValue(value, definition, textFor(locale));
 }
 
 /**
@@ -38,7 +40,8 @@ export function FilterChip(props: {
   let button: HTMLButtonElement | undefined;
   let popover: HTMLDivElement | undefined;
   const id = `chip-${props.name}`;
-  const active = () => filterValue(props.value, props.definition) !== "All";
+  const active = () => !isUnset(props.value);
+  const t = useText();
   const position = () => {
     if (!button) return;
     const rect = button.getBoundingClientRect();
@@ -116,8 +119,8 @@ export function FilterChip(props: {
             context={props.context}
           />
           <div class="chip-popover-actions">
-            <button type="button" class="button text" onClick={() => props.onChange(props.definition.type === "array" ? [] : null)}>Clear</button>
-            <button type="button" class="button secondary" onClick={() => close()}>Done</button>
+            <button type="button" class="button text" onClick={() => props.onChange(props.definition.type === "array" ? [] : null)}>{t().clear}</button>
+            <button type="button" class="button secondary" onClick={() => close()}>{t().done}</button>
           </div>
         </div>
       </Show>
@@ -140,7 +143,8 @@ export function FilterBar(props: {
 }) {
   const [more, setMore] = createSignal(false);
   const extra = () => props.names.slice(props.visible);
-  const activeExtra = () => extra().filter((name) => filterValue(props.draft[name], props.definitions[name]!) !== "All").length;
+  const activeExtra = () => extra().filter((name) => !isUnset(props.draft[name])).length;
+  const t = useText();
   return (
     <>
       <Show when={props.prompt}>
@@ -165,7 +169,7 @@ export function FilterBar(props: {
       </For>
       <Show when={extra().length > 0}>
         <button type="button" class="more-filters" aria-expanded={more() ? "true" : "false"} onClick={() => setMore(!more())}>
-          {more() ? "Fewer filters" : `+ ${extra().length} filter${extra().length > 1 ? "s" : ""}${activeExtra() ? ` · ${activeExtra()} set` : ""}`}
+          {more() ? t().fewerFilters : t().moreFilters(extra().length, activeExtra())}
         </button>
       </Show>
     </>

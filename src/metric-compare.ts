@@ -2,6 +2,7 @@
 import { numericValue } from "../core/tables";
 import type { Format, MetricDefinition, Scalar } from "../core/types";
 import { formatValue } from "./format";
+import { textFor } from "../core/i18n";
 
 export interface Comparison {
   /** Signed change text, e.g. "+12.3%" or "−US$ 1.200". */
@@ -36,14 +37,15 @@ export function compareMetric(definition: MetricDefinition, value: Scalar, compa
   // (on the number, not the text: some locales use non-Latin digits).
   const digits = percent ? 3 : points ? 1 : definition.format?.decimals ?? 2;
   const direction = Math.round(shown * 10 ** digits) === 0 ? "flat" : amount > 0 ? "up" : "down";
-  const label = spec.label ?? "vs previous";
+  const t = textFor(locale);
+  const label = spec.label ?? t.vsPrevious;
   const good = (direction === "up") === ((spec.better ?? "higher") === "higher");
   return {
     change: direction === "up" ? `+${text}` : direction === "down" ? `${MINUS}${text}` : text,
     label,
     direction,
     tone: direction === "flat" ? "neutral" : good ? "good" : "bad",
-    description: `${direction === "flat" ? "Unchanged" : direction === "up" ? "Up" : "Down"} ${text} ${label}`,
+    description: `${direction === "flat" ? t.unchanged : direction === "up" ? t.up : t.down} ${text} ${label}`,
   };
 }
 
@@ -63,7 +65,7 @@ export function targetProgress(definition: MetricDefinition, value: Scalar, targ
   if (goal === null || goal === undefined || current === null || goal === 0) return undefined;
   const ratio = current / goal;
   return {
-    label: spec.label ?? "Target",
+    label: spec.label ?? textFor(locale).target,
     target: formatValue(goal, definition.format as Format | undefined, locale),
     ratio: Math.max(0, Math.min(1, ratio)),
     percent: formatValue(ratio, { style: "percent", decimals: 0 }, locale),

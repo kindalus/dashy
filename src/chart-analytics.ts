@@ -5,6 +5,7 @@
 import type { CartesianSeries, Format, ReferenceLine, Row, Scalar } from "../core/types";
 import { detectPeriods, forecastSeries, linearFit, minimumPoints, referenceValue } from "../core/series";
 import { formatValue } from "./format";
+import { messages, textFor, type Messages } from "../core/i18n";
 
 export interface AnalyticsInput {
   rows: readonly Row[];
@@ -32,16 +33,20 @@ export interface AnalyticsOutput {
 const toNumber = (value: Scalar | undefined) =>
   value === null || value === undefined || value === "" ? null : Number(value);
 const text = (value: Scalar | undefined) => (value === null || value === undefined ? "" : String(value));
-const defaultLabel = (line: ReferenceLine) =>
-  line.label ?? (line.kind === "constant" ? "Target" : line.kind[0]!.toUpperCase() + line.kind.slice(1));
+const defaultLabel = (line: ReferenceLine, t: Messages) =>
+  line.label ?? (line.kind === "constant" ? t.target : t[line.kind]);
 
 export function buildAnalytics(input: AnalyticsInput): AnalyticsOutput {
   const { rows, x, xType, series } = input;
   const labels = rows.map((row) => text(row[x]));
   const format = (value: number, f?: Format) => formatValue(value, f, input.locale);
   const output: AnalyticsOutput = { markLines: [], extra: [], future: [], notes: [] };
+  const t = textFor(input.locale);
   const periods = series.some((s) => s.forecast) ? detectPeriods(labels) : undefined;
-  if (periods && "error" in periods) output.notes.push(`Forecast unavailable: ${periods.error}.`);
+  // detectPeriods explains in English; show its two reasons in the interface language.
+  const reason = (error: string) =>
+    error === messages.en.periodsTooFew ? t.periodsTooFew : error === messages.en.periodsIrregular ? t.periodsIrregular : error;
+  if (periods && "error" in periods) output.notes.push(t.forecastUnavailable(reason(periods.error)));
   // Category axes index points by position; time and value axes need [x, y] pairs.
   const point = (index: number, value: number | null, label = labels[index]!) =>
     xType === "category" ? value : [xType === "value" ? toNumber(rows[index]?.[x]) : label, value];
@@ -56,7 +61,7 @@ export function buildAnalytics(input: AnalyticsInput): AnalyticsOutput {
     const lines = (s.reference ?? []).flatMap((line) => {
       const value = referenceValue(line.kind, finite, line.value);
       if (value === undefined) return [];
-      const label = defaultLabel(line);
+      const label = defaultLabel(line, t);
       return [{ name: label, [input.horizontal ? "xAxis" : "yAxis"]: value, label: { formatter: `${label}: ${format(value, s.format)}` } }];
     });
     output.markLines.push(lines.length ? {
@@ -72,11 +77,11 @@ export function buildAnalytics(input: AnalyticsInput): AnalyticsOutput {
       const pairs = values.map((y, i) => [xs[i], y] as const)
         .filter((p): p is readonly [number, number] => p[0] !== null && Number.isFinite(p[0]) && p[1] !== null && Number.isFinite(p[1]));
       const fit = linearFit(pairs.map((p) => p[0]), pairs.map((p) => p[1]));
-      if (!fit) output.notes.push(`${s.label} trend unavailable: needs at least two points.`);
+      if (!fit) output.notes.push(t.trendUnavailable(s.label));
       else
         output.extra.push({
           ...common,
-          name: `${s.label} trend`, type: "line",
+          name: t.trendOf(s.label), type: "line",
           data: rows.map((_, i) => xs[i] === null || !Number.isFinite(xs[i]!) ? point(i, null) : point(i, fit.intercept + fit.slope * xs[i]!)),
           lineStyle: { type: "dashed", width: 1.5, color, opacity: 0.8 },
           itemStyle: { color },
@@ -87,12 +92,12 @@ export function buildAnalytics(input: AnalyticsInput): AnalyticsOutput {
     if (s.forecast && periods && !("error" in periods)) {
       const method = s.forecast.method ?? "linear";
       if (values.some((v) => v === null || !Number.isFinite(v))) {
-        output.notes.push(`${s.label} forecast unavailable: every period needs a value.`);
+        output.notes.push(t.forecastNeedsValues(s.label));
         return;
       }
       const raw = forecastSeries(values as number[], method, s.forecast.periods, s.forecast.season);
       if (!raw) {
-        output.notes.push(`${s.label} forecast unavailable: needs at least ${minimumPoints(method, s.forecast.season)} periods.`);
+        output.notes.push(t.forecastNeedsPeriods(s.label, minimumPoints(method, s.forecast.season)));
         return;
       }
       // A series that never goes below zero (revenue, counts) is not projected below zero.
@@ -106,7 +111,7 @@ export function buildAnalytics(input: AnalyticsInput): AnalyticsOutput {
       // Each line starts at the last actual value so it continues the series.
       const anchor = (value: number) => [labels[last]!, value];
       const at = (h: number, value: number) => [future[h]!, value];
-      const name = `${s.label} forecast`;
+      const name = t.forecastOf(s.label);
       const band = { ...common, name, type: "line", stack: `forecast-band-${index}`, stackStrategy: "all", tooltip: { show: false } };
       output.extra.push(
         {
@@ -116,7 +121,7 @@ export function buildAnalytics(input: AnalyticsInput): AnalyticsOutput {
           itemStyle: { color },
           tooltip: {
             valueFormatter: (v: number, dataIndex: number) =>
-              dataIndex === 0 ? format(v, s.format) : `${format(v, s.format)} (forecast)`,
+              dataIndex === 0 ? format(v, s.format) : `${format(v, s.format)} ${t.forecastSuffix}`,
           },
         },
         // The 95% interval: an invisible lower edge plus the stacked width, shaded.

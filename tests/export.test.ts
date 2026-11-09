@@ -130,6 +130,27 @@ describe("Excel", () => {
       ["Generated", "2026-11-09T10:00:00.000Z"],
     ]);
   });
+  test("a Portuguese viewer gets the summary rows and the Filters sheet in Portuguese", async () => {
+    const workbook = await load(await toXlsx(input({ locale: "pt-AO", options: { format: "xlsx", sort: { column: "revenue", direction: "desc" } } })));
+    expect(workbook.worksheets.map((s) => s.name)).toEqual(["Sales  by  brand", "Filtros"]);
+    const sheet = workbook.worksheets[0]!;
+    expect(sheet.getCell("A3").value).toBe("Total Food");
+    expect(sheet.getCell("A6").value).toBe("Total Toys");
+    expect(sheet.getCell("A7").value).toBe("Total");
+    const values = workbook.getWorksheet("Filtros")!.getSheetValues().slice(1).map((r) => (r as unknown[]).slice(1));
+    expect(values).toEqual([
+      ["Filtro", "Valor"],
+      ["Dashboard", "Sales"],
+      ["Bloco", "Sales: by [brand]"],
+      ["Region", "North, South"],
+      ["Period", "2026-01-01 – 2026-01-31"],
+      ["Online", "Sim"],
+      ["Store", "Todos"],
+      ["Channel", "Não aplicado a este bloco"],
+      ["Ordenado por", "Revenue (decrescente)"],
+      ["Gerado em", "2026-11-09T10:00:00.000Z"],
+    ]);
+  });
   test("numeric strings become numbers unless they are text, zero-padded or beyond 2^53; local timestamps are UTC", async () => {
     const typed: DatasetDefinition = {
       label: "Filters", query: "q",
@@ -234,8 +255,11 @@ describe("export endpoint", () => {
     // The origin block of a cross-filter keeps all its rows, as on screen.
     const origin = await get("/api/dashboard-export/overview/brands?region=North&_xf=brands:region&_top=0");
     expect((await origin.text()).split("\r\n")).toHaveLength(5);
+    // The "Other" row is named in the viewer's language: the project's (pt by default) or their saved choice.
     const top = await get("/api/dashboard-export/overview/brands?_top=1");
-    expect((await top.text()).slice(1).split("\r\n").slice(1, 3)).toEqual(["North,A,10", "Other,,12"]);
+    expect((await top.text()).slice(1).split("\r\n").slice(1, 3)).toEqual(["North,A,10", "Outros,,12"]);
+    const english = await api(new Request("http://localhost/api/dashboard-export/overview/brands?_top=1", { headers: { Cookie: "dashy_language=en" } }));
+    expect((await english.text()).slice(1).split("\r\n").slice(1, 3)).toEqual(["North,A,10", "Other,,12"]);
   });
   test("serves Excel", async () => {
     const response = await get("/api/dashboard-export/overview/brands?_format=xlsx");

@@ -77,8 +77,18 @@ bun dashy.mjs start --locale en
 ```
 
 Precedence is `--locale`, `DASHY_LOCALE`, the project's `locale`, then `pt`. The option
-formats numbers, currencies and dates; it does not translate interface text
-or change currencies. Invalid language tags fail before the server starts.
+formats numbers, currencies and dates; it does not change currencies. Invalid
+language tags fail before the server starts.
+
+Dashy's own interface (buttons, menus, filters, states, exports and error pages) is
+in English or Portuguese. The project's `language` (`"en"` or `"pt"`) sets the
+default, otherwise a Portuguese `locale` gives Portuguese and any other locale
+English. Viewers can switch it in the sidebar, like the theme; the choice is saved
+in the `dashy_language` cookie and applies from the first response. Numbers and
+dates follow the chosen language, keeping the project locale when it is in that
+language (for example `pt-AO`). `languages: ["pt"]` limits the choices and
+`languages: false` hides the selector. Labels your project defines (dashboards,
+datasets, parameters) are shown as written.
 
 Deploy the `.output` directory with Bun installed. From that directory:
 

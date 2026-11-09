@@ -2,6 +2,7 @@ import { createEffect, createSignal, onSettled, Show } from "solid-js";
 import type { DatasetDefinition, QueryResult, Row } from "../core/types";
 import type { Selection } from "./chart-options";
 import { printing } from "./print";
+import { textFor } from "../core/i18n";
 
 export interface ChartSnapshot {
   svg: string;
@@ -32,7 +33,7 @@ export function Chart(props: {
   const [error, setError] = createSignal("");
   const [notes, setNotes] = createSignal<string[]>([]);
   const unavailable = () =>
-    setError("Chart unavailable. Switch to Table to view the data.");
+    setError(textFor(props.locale).chartUnavailable);
 
   onSettled(() => {
     let disposed = false;
@@ -96,7 +97,7 @@ export function Chart(props: {
       <Show when={!renderer() && !error()}>
         <div class="chart-loading" role="status">
           <Spinner />
-          <span>Loading chart…</span>
+          <span>{textFor(props.locale).loadingChart}</span>
         </div>
       </Show>
       <Show when={error()}>

@@ -4,6 +4,7 @@
  */
 import { chartKeyColumns, isCartesian } from "./charts.ts";
 import type { DatasetColumn, DatasetDefinition, Row, Scalar, TableSort, TopNDefinition } from "./types.ts";
+import { messages, type Messages } from "./i18n.ts";
 
 const NUMERIC = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 const INTEGER = /^[+-]?\d+$/;
@@ -141,7 +142,11 @@ export interface TopNResult {
  * are never kept. `n` of 0 keeps every row. An incomplete (truncated) result is
  * returned unchanged: ranking only the rows that fit the limit could miss the true top.
  */
-export function applyTopN(rows: readonly Row[], definition: DatasetDefinition, n: number, complete: boolean): TopNResult {
+export function applyTopN(
+  rows: readonly Row[], definition: DatasetDefinition, n: number, complete: boolean,
+  /** Name of the "Other" row when the dataset sets no `otherLabel`. */
+  otherText = "Other",
+): TopNResult {
   const topN = definition.topN;
   if (!topN || !n || !complete) return { rows, members: rows, hidden: 0 };
   const rankable = rows.filter((row) => numericValue(row[topN.by]) !== null);
@@ -157,7 +162,7 @@ export function applyTopN(rows: readonly Row[], definition: DatasetDefinition, n
   // Rest rows without any aggregatable value add nothing worth a row.
   if (definition.columns.every((column) => !column.aggregate || other[column.key] === null))
     return { rows: shown, members: shown, hidden: rest.length };
-  other[topNLabelColumn(definition)!] = topN.otherLabel ?? "Other";
+  other[topNLabelColumn(definition)!] = topN.otherLabel ?? otherText;
   otherRows.add(other);
   return { rows: [...shown, other], members: rows, hidden: rest.length };
 }
@@ -280,4 +285,5 @@ export function validateTable(definition: DatasetDefinition): string | undefined
 }
 
 /** Text in a subtotal row's group column, e.g. "Audio total". */
-export const summaryLabel = (display: Scalar | undefined) => `${isEmpty(display) ? "—" : String(display)} total`;
+export const summaryLabel = (display: Scalar | undefined, text: Pick<Messages, "subtotal"> = messages.en) =>
+  text.subtotal(isEmpty(display) ? "—" : String(display));

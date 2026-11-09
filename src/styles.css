@@ -171,6 +171,14 @@ p {
   align-items: stretch;
   gap: 14px;
 }
+.noscript-note {
+  margin: 0;
+  padding: 10px 16px;
+  background: var(--danger-soft);
+  color: var(--text);
+  border-bottom: 1px solid var(--danger-border);
+  font: 14px var(--font-ui, system-ui, sans-serif);
+}
 .sidebar-status {
   display: flex;
   align-items: center;

@@ -3,6 +3,8 @@ import { resolveRelativeRange, todayIn } from "../core/dates";
 import type { ParamDefinition, ParamOption, ParamValue, Params, QueryParamOptions, Scalar } from "../core/types";
 import { appendParam } from "./actions";
 import { Select } from "./select";
+import { useText } from "./language-picker";
+import { messages, type Messages } from "../core/i18n";
 
 export interface ControlProps {
   name: string;
@@ -26,6 +28,7 @@ export async function fetchOptions(
   name: string,
   request: { search?: string; values?: Scalar[]; context?: Params },
   signal?: AbortSignal,
+  text: Messages = messages.en,
 ): Promise<{ options: Option[]; truncated: boolean }> {
   const search = new URLSearchParams();
   for (const [param, value] of Object.entries(request.context ?? {}))
@@ -34,12 +37,13 @@ export async function fetchOptions(
   for (const value of request.values ?? []) search.append("_value", key(value));
   const response = await fetch(`/api/params/${encodeURIComponent(name)}/options?${search}`, { signal, credentials: "same-origin" });
   const body = await response.json();
-  if (!response.ok) throw new Error(body.error || "Unable to load options");
+  if (!response.ok) throw new Error(body.error || text.unableToLoadOptions);
   return body;
 }
 
 export function ParameterControl(props: ControlProps) {
   const def = () => props.definition;
+  const t = useText();
   const id = () => `param-${props.name}`;
   const kind = createMemo(() => {
     const d = def();
@@ -60,15 +64,15 @@ export function ParameterControl(props: ControlProps) {
           case "range": return <RangeControl {...props} />;
           case "boolean": return (
             <Select id={id()} value={key(props.value as Scalar ?? "")} required={def().required}
-              options={[...(def().required ? [] : [{ value: "", label: "All" }]), { value: "true", label: "Yes" }, { value: "false", label: "No" }]}
-              placeholder="Select…"
+              options={[...(def().required ? [] : [{ value: "", label: t().all }]), { value: "true", label: t().yes }, { value: "false", label: t().no }]}
+              placeholder={t().selectPlaceholder}
               onChange={(value) => props.onChange(value === "" ? null : value === "true")} />
           );
           case "select": return <SelectControl {...props} id={id()} />;
           case "multi": return <MultiSelectControl {...props} id={id()} />;
           case "autocomplete": return <AutocompleteControl {...props} id={id()} />;
           case "list": return (
-            <input id={id()} type="text" autocomplete="off" placeholder={def().placeholder ?? "Comma-separated values"}
+            <input id={id()} type="text" autocomplete="off" placeholder={def().placeholder ?? t().commaSeparated}
               value={toList(props.value).join(", ")}
               onChange={(e) => props.onChange(e.currentTarget.value.split(",").map((v) => v.trim()).filter(Boolean))} />
           );
@@ -93,6 +97,7 @@ function useQueryOptions(props: ControlProps) {
     : ((props.definition.options ?? []) as readonly ParamOption[]).map((o) => ({ value: o.value, label: o.label }))));
   const [error, setError] = createSignal("");
   const [loading, setLoading] = createSignal(false);
+  const t = useText();
   // Query options may depend on other filters; static options never refetch.
   const others = () => {
     const { [props.name]: _own, ...rest } = props.context();
@@ -102,9 +107,9 @@ function useQueryOptions(props: ControlProps) {
     if (!context) return;
     const controller = new AbortController();
     setLoading(true);
-    fetchOptions(props.name, { context: JSON.parse(context) }, controller.signal)
+    fetchOptions(props.name, { context: JSON.parse(context) }, controller.signal, untrack(t))
       .then((result) => { setOptions(result.options); setError(""); })
-      .catch((e) => { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "Unable to load options"); })
+      .catch((e) => { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : untrack(t).unableToLoadOptions); })
       .finally(() => setLoading(false));
     return () => controller.abort();
   });
@@ -113,16 +118,17 @@ function useQueryOptions(props: ControlProps) {
 
 function SelectControl(props: ControlProps & { id: string }) {
   const { options, error, loading } = useQueryOptions(props);
+  const t = useText();
   // Required parameters have no "All" choice; an empty value shows the placeholder.
   const choices = createMemo(() => [
-    ...(props.definition.required ? [] : [{ value: "", label: "All" }]),
+    ...(props.definition.required ? [] : [{ value: "", label: t().all }]),
     ...options().map((option) => ({ value: key(option.value), label: String(option.label ?? option.value) })),
   ]);
   return (
     <>
       <Select id={props.id} value={key((props.value ?? "") as Scalar)} options={choices()} loading={loading()}
         required={props.definition.required} invalid={Boolean(error())}
-        placeholder={props.definition.placeholder ?? (props.value === undefined || props.value === null || props.value === "" ? "Select…" : String(props.value))}
+        placeholder={props.definition.placeholder ?? (props.value === undefined || props.value === null || props.value === "" ? t().selectPlaceholder : String(props.value))}
         onChange={(raw) => {
           const option = options().find((o) => key(o.value) === raw);
           props.onChange(raw === "" ? null : option ? option.value : raw);
@@ -157,11 +163,12 @@ function MultiSelectControl(props: ControlProps & { id: string }) {
   let root: HTMLDivElement | undefined;
   dismissable(() => root, open, () => setOpen(false));
   const selected = () => new Set(toList(props.value).map(key));
+  const t = useText();
   const summary = () => {
     const values = toList(props.value);
-    if (!values.length) return "All";
+    if (!values.length) return t().all;
     const labels = values.map((v) => String(options().find((o) => key(o.value) === key(v))?.label ?? v));
-    return labels.length <= 2 ? labels.join(", ") : `${labels.length} selected`;
+    return labels.length <= 2 ? labels.join(", ") : t().selectedCount(labels.length);
   };
   const visible = () => {
     const term = filter().trim().toLowerCase();
@@ -182,12 +189,12 @@ function MultiSelectControl(props: ControlProps & { id: string }) {
       <Show when={open()}>
         <div class="popover" role="dialog" aria-label={props.definition.label}>
           <Show when={options().length > 8}>
-            <input type="search" class="popover-search" placeholder="Filter options" aria-label={`Filter ${props.definition.label}`}
+            <input type="search" class="popover-search" placeholder={t().filterOptions} aria-label={t().filterNamed(props.definition.label)}
               value={filter()} onInput={(e) => setFilter(e.currentTarget.value)} />
           </Show>
           <ul id={`${props.id}-list`} role="listbox" aria-multiselectable="true" class="option-list">
-            <Show when={loading()}><li class="option-note">Loading…</li></Show>
-            <Show when={!loading() && !visible().length}><li class="option-note">No options</li></Show>
+            <Show when={loading()}><li class="option-note">{t().loading}</li></Show>
+            <Show when={!loading() && !visible().length}><li class="option-note">{t().noOptions}</li></Show>
             <For each={visible()}>
               {(option) => (
                 <li role="option" aria-selected={selected().has(key(option.value)) ? "true" : "false"}>
@@ -198,8 +205,8 @@ function MultiSelectControl(props: ControlProps & { id: string }) {
             </For>
           </ul>
           <div class="popover-actions">
-            <button type="button" class="button text" onClick={() => props.onChange([])}>Clear</button>
-            <button type="button" class="button secondary" onClick={() => setOpen(false)}>Done</button>
+            <button type="button" class="button text" onClick={() => props.onChange([])}>{t().clear}</button>
+            <button type="button" class="button secondary" onClick={() => setOpen(false)}>{t().done}</button>
           </div>
         </div>
       </Show>
@@ -216,6 +223,7 @@ function AutocompleteControl(props: ControlProps & { id: string }) {
   const [open, setOpen] = createSignal(false);
   const [active, setActive] = createSignal(-1);
   const [error, setError] = createSignal("");
+  const t = useText();
   let root: HTMLDivElement | undefined;
   dismissable(() => root, open, () => setOpen(false));
   const values = () => toList(props.value);
@@ -231,7 +239,7 @@ function AutocompleteControl(props: ControlProps & { id: string }) {
     const unknown = current.filter((v) => !known.has(key(v)));
     if (!unknown.length) return;
     const controller = new AbortController();
-    fetchOptions(props.name, { values: unknown, context }, controller.signal)
+    fetchOptions(props.name, { values: unknown, context }, controller.signal, untrack(t))
       .then((result) => remember(result.options)).catch(() => {});
     return () => controller.abort();
   });
@@ -246,9 +254,9 @@ function AutocompleteControl(props: ControlProps & { id: string }) {
     timer = setTimeout(() => {
       controller = new AbortController();
       const signal = controller.signal;
-      fetchOptions(props.name, { search: text, context: props.context() }, signal)
+      fetchOptions(props.name, { search: text, context: props.context() }, signal, t())
         .then((result) => { setResults(result.options); remember(result.options); setActive(result.options.length ? 0 : -1); setOpen(true); setError(""); })
-        .catch((e) => { if (!signal.aborted) setError(e instanceof Error ? e.message : "Unable to search"); });
+        .catch((e) => { if (!signal.aborted) setError(e instanceof Error ? e.message : t().unableToSearch); });
     }, 200);
   };
   const choose = (option: Option) => {
@@ -276,7 +284,7 @@ function AutocompleteControl(props: ControlProps & { id: string }) {
           <For each={values()}>
             {(value) => (
               <span class="chip">{labelOf(value)}
-                <button type="button" aria-label={`Remove ${labelOf(value)}`} onClick={() => props.onChange(values().filter((v) => key(v) !== key(value)))}>×</button>
+                <button type="button" aria-label={t().remove(labelOf(value))} onClick={() => props.onChange(values().filter((v) => key(v) !== key(value)))}>×</button>
               </span>
             )}
           </For>
@@ -284,7 +292,7 @@ function AutocompleteControl(props: ControlProps & { id: string }) {
         <input id={props.id} type="text" role="combobox" autocomplete="off" aria-autocomplete="list"
           aria-expanded={open() ? "true" : "false"} aria-controls={`${props.id}-list`}
           aria-activedescendant={open() && active() >= 0 ? `${props.id}-option-${active()}` : undefined}
-          placeholder={props.definition.placeholder ?? (multiple() && values().length ? "" : "Search…")}
+          placeholder={props.definition.placeholder ?? (multiple() && values().length ? "" : t().searchPlaceholder)}
           value={term() || (!multiple() && values().length ? labelOf(values()[0]!) : "")}
           onInput={(e) => search(e.currentTarget.value)}
           onFocus={(e) => { if (!results().length) search(multiple() || !values().length ? "" : e.currentTarget.value); else setOpen(true); }}
@@ -292,7 +300,7 @@ function AutocompleteControl(props: ControlProps & { id: string }) {
       </div>
       <Show when={open()}>
         <ul id={`${props.id}-list`} role="listbox" class="popover option-list">
-          <Show when={!results().length}><li class="option-note">No matches</li></Show>
+          <Show when={!results().length}><li class="option-note">{t().noMatches}</li></Show>
           <For each={results()}>
             {(option, index) => (
               <li id={`${props.id}-option-${index()}`} role="option" aria-selected={active() === index() ? "true" : "false"}
@@ -310,16 +318,17 @@ function AutocompleteControl(props: ControlProps & { id: string }) {
 }
 
 const presets = [
-  { id: "ytd", label: "Year to date", range: { relative: "ytd" as const } },
-  { id: "mtd", label: "Month to date", range: { relative: "mtd" as const } },
-  { id: "last-closed-month", label: "Last closed month", range: { relative: "last-closed-month" as const } },
-  { id: "last-30", label: "Last 30 days", range: { relative: "last-days" as const, days: 30 } },
-  { id: "last-12m", label: "Last 12 months", range: { relative: "last-months" as const, months: 12 } },
-  { id: "last-closed-year", label: "Last closed year", range: { relative: "last-closed-year" as const } },
-];
+  { id: "ytd", label: "yearToDate", range: { relative: "ytd" as const } },
+  { id: "mtd", label: "monthToDate", range: { relative: "mtd" as const } },
+  { id: "last-closed-month", label: "lastClosedMonth", range: { relative: "last-closed-month" as const } },
+  { id: "last-30", label: "last30Days", range: { relative: "last-days" as const, days: 30 } },
+  { id: "last-12m", label: "last12Months", range: { relative: "last-months" as const, months: 12 } },
+  { id: "last-closed-year", label: "lastClosedYear", range: { relative: "last-closed-year" as const } },
+] as const;
 
 function RangeControl(props: ControlProps) {
   const def = () => props.definition;
+  const t = useText();
   const isDate = () => def().valueType === "date";
   const inputType = () => (isDate() ? "date" : def().valueType === "number" ? "number" : "text");
   const range = () => (props.value && typeof props.value === "object" && !Array.isArray(props.value) ? props.value : undefined);
@@ -340,18 +349,18 @@ function RangeControl(props: ControlProps) {
   return (
     <div class="range-inputs" role="group" aria-labelledby={`param-${props.name}-label`}>
       <Show when={isDate()}>
-        <Select label={`${def().label} preset`} class="range-preset" value={preset()}
-          options={[{ value: "", label: "Custom" }, ...presets.map((p) => ({ value: p.id, label: p.label }))]}
+        <Select label={t().presetOf(def().label)} class="range-preset" value={preset()}
+          options={[{ value: "", label: t().custom }, ...presets.map((p) => ({ value: p.id, label: t()[p.label] }))]}
           onChange={(value) => {
             const chosen = presets.find((p) => p.id === value);
             if (chosen) props.onChange(resolveRelativeRange(chosen.range, todayIn(props.timezone)));
           }} />
       </Show>
-      <input aria-label={`${def().label} from`} autocomplete="off" type={inputType()} value={key((range()?.from ?? "") as Scalar)}
+      <input aria-label={t().rangeFrom(def().label)} autocomplete="off" type={inputType()} value={key((range()?.from ?? "") as Scalar)}
         required={def().required} min={def().min} max={def().max} step={def().integer ? 1 : "any"}
         onChange={(e) => set("from", e.currentTarget.value)} />
-      <span aria-hidden="true">to</span>
-      <input aria-label={`${def().label} until`} autocomplete="off" type={inputType()} value={key((range()?.until ?? "") as Scalar)}
+      <span aria-hidden="true">{t().rangeTo}</span>
+      <input aria-label={t().rangeUntil(def().label)} autocomplete="off" type={inputType()} value={key((range()?.until ?? "") as Scalar)}
         required={def().required} min={def().min} max={def().max} step={def().integer ? 1 : "any"}
         onChange={(e) => set("until", e.currentTarget.value)} />
     </div>

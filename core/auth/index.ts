@@ -9,6 +9,7 @@ import { readFile, stat } from "node:fs/promises";
 import { createRemoteJWKSet, decodeJwt, jwtVerify, SignJWT, type JWTPayload } from "jose";
 import { DashyError } from "../params";
 import type { AuthResult, Principal } from "../types";
+import { acceptedLanguage, isLanguage, languageCookie, messages, type Language, type Messages } from "../i18n";
 
 export interface AuthIdentity {
   subject: string;
@@ -45,6 +46,11 @@ export interface AuthOptions {
   apiKeys?: { file?: string; keys?: Record<string, readonly string[]> };
   /** Roles for a signed-in user. Return [] to deny access (403). */
   roles?: (identity: AuthIdentity) => readonly string[] | Promise<readonly string[]>;
+  /**
+   * Language of the sign-in pages when the viewer has not chosen one in the workspace
+   * (the dashy_language cookie). Default: the browser's Accept-Language, else English.
+   */
+  language?: Language;
 }
 export interface Auth {
   authenticate(request: Request): Promise<AuthResult>;
@@ -91,12 +97,12 @@ function readCookie(request: Request, name: string): string | undefined {
 const isPageRequest = (request: Request, url: URL) =>
   (request.method === "GET" || request.method === "HEAD") && !url.pathname.startsWith("/api/");
 const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-function page(status: number, title: string, message: string, headers = new Headers(), link = { href: "/", label: "Back to the workspace" }): Response {
+function page(t: Messages, status: number, title: string, message: string, headers = new Headers(), link = { href: "/", label: t.backToWorkspace }): Response {
   headers.set("Content-Type", "text/html; charset=utf-8");
   headers.set("Cache-Control", "no-store");
   headers.set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'");
   return new Response(
-    `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title>`
+    `<!DOCTYPE html><html lang="${t === messages.pt ? "pt" : "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title>`
     + `<style>body{font:16px system-ui,sans-serif;margin:0;display:grid;place-items:center;min-height:100vh;background:#f7f7f5;color:#1d1d1b}main{max-width:32rem;padding:2rem}a{color:inherit}</style></head>`
     + `<body><main><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p><p><a href="${escapeHtml(link.href)}">${escapeHtml(link.label)}</a></p></main></body></html>`,
     { status, headers },
@@ -159,6 +165,13 @@ export function createAuth(options: AuthOptions): Auth {
   const ttl = options.session?.ttlSeconds ?? 4 * 60 * 60;
   if (!Number.isInteger(ttl) || ttl < 60) throw new Error("Invalid Dashy auth: session.ttlSeconds must be an integer of at least 60");
   const cookieName = options.session?.cookieName ?? "dashy_session";
+  if (options.language !== undefined && !isLanguage(options.language)) throw new Error("Invalid Dashy auth: language must be en or pt");
+  /** Sign-in page text: the viewer's workspace choice, then the project's, then the browser's. */
+  const textOf = (request: Request): Messages => {
+    let chosen: string | undefined;
+    try { chosen = decodeURIComponent(readCookie(request, languageCookie) ?? ""); } catch { chosen = undefined; }
+    return messages[isLanguage(chosen) ? chosen : options.language ?? acceptedLanguage(request.headers.get("accept-language")) ?? "en"];
+  };
   const stateCookie = `${cookieName}_oidc`;
   const secure = options.session?.secure ?? process.env.NODE_ENV === "production";
   const oidc = options.oidc;
@@ -258,7 +271,8 @@ export function createAuth(options: AuthOptions): Auth {
   }
 
   async function login(request: Request, url: URL): Promise<Response> {
-    if (!oidc) return page(401, "Sign in required", "This workspace accepts API keys only.");
+    const t = textOf(request);
+    if (!oidc) return page(t, 401, t.signInRequired, t.apiKeysOnly);
     const meta = await discover();
     const state = random();
     const nonce = random();
@@ -284,10 +298,11 @@ export function createAuth(options: AuthOptions): Auth {
   async function callback(request: Request, url: URL): Promise<Response> {
     const clear = new Headers();
     clear.append("Set-Cookie", cookie(stateCookie, "", { maxAge: 0, secure, path: "/auth" }));
-    const retry = { href: "/auth/login", label: "Sign in again" };
+    const t = textOf(request);
+    const retry = { href: "/auth/login", label: t.signInAgain };
     const providerError = url.searchParams.get("error");
     if (providerError)
-      return page(401, "Sign in failed", url.searchParams.get("error_description") || `The identity provider returned ${providerError}.`, clear, retry);
+      return page(t, 401, t.signInFailed, url.searchParams.get("error_description") || t.providerReturned(providerError), clear, retry);
     const code = url.searchParams.get("code");
     const state = url.searchParams.get("state");
     const stored = readCookie(request, stateCookie);
@@ -297,7 +312,7 @@ export function createAuth(options: AuthOptions): Auth {
       saved = (await jwtVerify(stored, secret, { algorithms: ["HS256"] })).payload as unknown as typeof saved;
       if (saved.state !== state) throw new Error();
     } catch {
-      return page(400, "Sign in expired", "The sign-in attempt is invalid or has expired.", clear, retry);
+      return page(t, 400, t.signInExpired, t.signInInvalid, clear, retry);
     }
     const meta = await discover();
     const body = new URLSearchParams({
@@ -310,24 +325,24 @@ export function createAuth(options: AuthOptions): Auth {
       headers.Authorization = `Basic ${Buffer.from(`${encodeURIComponent(oidc!.clientId)}:${encodeURIComponent(oidc!.clientSecret)}`).toString("base64")}`;
     if (method === "client_secret_post" && oidc!.clientSecret) body.set("client_secret", oidc!.clientSecret);
     const response = await fetch(meta.token_endpoint, { method: "POST", headers, body, signal: AbortSignal.timeout(10_000) });
-    if (!response.ok) return page(502, "Sign in failed", "The identity provider rejected the sign-in.", clear, retry);
+    if (!response.ok) return page(t, 502, t.signInFailed, t.providerRejected, clear, retry);
     const tokens = await response.json() as Record<string, unknown>;
     let claims: Record<string, unknown>;
     try {
       claims = await claimsFrom(meta, tokens, saved.nonce);
     } catch (error) {
       if (!(error instanceof DashyError)) console.error("[dashy] OIDC token verification failed", error);
-      return page(401, "Sign in failed", "The identity provider's response could not be verified.", clear, retry);
+      return page(t, 401, t.signInFailed, t.providerUnverified, clear, retry);
     }
     const email = stringClaim(claims, "email")?.toLowerCase();
     const subject = stringClaim(claims, "sub") ?? email;
-    if (!subject) return page(401, "Sign in failed", "The identity has no subject or e-mail.", clear, retry);
+    if (!subject) return page(t, 401, t.signInFailed, t.noSubject, clear, retry);
     const name = stringClaim(claims, "name") ?? stringClaim(claims, "preferred_username");
     const identity: AuthIdentity = { subject, provider: "oidc", claims, ...(email ? { email } : {}), ...(name ? { name } : {}) };
     const roles = [...await options.roles!(identity)].filter((role) => typeof role === "string" && role && role !== "*");
     if (!roles.length)
-      return page(403, "Access denied", `${email ?? subject} has no access to this workspace. Ask an administrator for a role.`, clear,
-        { href: "/auth/logout", label: "Sign out" });
+      return page(t, 403, t.accessDenied, t.noAccess(email ?? subject), clear,
+        { href: "/auth/logout", label: t.signOut });
     clear.append("Set-Cookie", await issue({ roles, subject, provider: "oidc", ...(email ? { email } : {}), ...(name ? { name } : {}) }));
     clear.set("Location", safeRedirect(saved.redirect));
     clear.set("Cache-Control", "no-store");
@@ -378,7 +393,8 @@ export function createAuth(options: AuthOptions): Auth {
       if (url.pathname === "/auth/logout" && (request.method === "GET" || request.method === "POST")) {
         const headers = new Headers();
         headers.append("Set-Cookie", cookie(cookieName, "", { maxAge: 0, secure }));
-        return page(200, "Signed out", "You have signed out of this workspace.", headers, { href: oidc ? "/auth/login" : "/", label: "Sign in again" });
+        const t = textOf(request);
+        return page(t, 200, t.signedOut, t.signedOutMessage, headers, { href: oidc ? "/auth/login" : "/", label: t.signInAgain });
       }
       if (url.pathname === "/auth/me" && request.method === "GET") {
         const result = await authenticate(request).catch(() => null);
@@ -387,7 +403,8 @@ export function createAuth(options: AuthOptions): Auth {
       }
     } catch (error) {
       console.error("[dashy] Authentication route failed", error);
-      return page(502, "Sign in unavailable", "The identity provider could not be reached. Try again shortly.");
+      const t = textOf(request);
+      return page(t, 502, t.signInUnavailable, t.providerUnreachable);
     }
     return undefined;
   }

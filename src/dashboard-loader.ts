@@ -33,6 +33,8 @@ export class DashboardLoader {
     private dashboard: DashboardShell,
     private changed: (state: DashboardLoads) => void,
     private request: typeof fetch = fetch,
+    /** Shown when a failed request gives no reason, in the interface language. */
+    private fallbackError = "Unable to load data",
   ) {
     this.state = Object.fromEntries(dashboard.requests.map(({ id }) => [
       id, { loading: true, error: "" },
@@ -78,7 +80,7 @@ export class DashboardLoader {
         { signal: controller.signal },
       );
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error || "Unable to load data");
+      if (!response.ok) throw new Error(body.error || this.fallbackError);
       if (generation !== this.generation) return;
       this.update(id, { loading: false, error: "", data: body });
     } catch (error) {
@@ -86,7 +88,7 @@ export class DashboardLoader {
       this.update(id, {
         ...this.state[id]!,
         loading: false,
-        error: error instanceof Error ? error.message : "Unable to load data",
+        error: error instanceof Error ? error.message : this.fallbackError,
       });
     } finally {
       if (this.controllers.get(id) === controller) this.controllers.delete(id);

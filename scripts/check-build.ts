@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { DashboardResult } from "../core/types";
 import { themeNames, resolveTheme, viewerTheme } from "../core/theme";
+import { messages, type Language } from "../core/i18n";
 
 // Run the actual packaged CLI and server outside the source tree. This catches
 // both missing production dependencies and build-time sample selection leaks.
@@ -90,14 +91,17 @@ try {
     assert.equal((await request("/", "POST")).status, 405);
     assert.equal(await (await request("/", "HEAD")).text(), "");
     const data = JSON.parse(bootstrap[1]!);
-    assert.ok(html.includes(`lang="${data.catalog.locale.split("-")[0]}"`));
+    // The interface language reaches the first response: <html lang> and the chrome's text.
+    const language = data.language as Language;
+    assert.equal(language, data.catalog.language.name, "without a cookie the project language applies");
+    assert.ok(html.includes(`lang="${language}"`));
     assert.equal((await (await request("/api/catalog")).json()).locale, data.catalog.locale);
     if (data.dashboard) {
       assert.equal(
         data.dashboard.blocks, undefined, "SSR must not include query results",
       );
       assert.equal(data.dashboard.generatedAt, undefined);
-      assert.ok(html.includes("Loading data"));
+      assert.ok(html.includes(messages[language].loadingData(0, data.dashboard.requests.length)));
       assert.equal(
         (html.match(/class="block-loading"/g) || []).length,
         data.dashboard.definition.blocks.length,
@@ -120,6 +124,18 @@ try {
     assert.equal(data.dashboard, null);
     assert.equal(data.catalog.locale, "pt");
     assert.equal((await request("/api/queries/summary")).status, 404);
+    // The default locale pt gives a Portuguese interface; a viewer's cookie switches it on the first response.
+    assert.deepEqual(data.catalog.language, { name: "pt", selectable: ["en", "pt"] });
+    const pt = await (await request("/")).text();
+    assert.ok(pt.includes(messages.pt.noDashboards) && pt.includes('class="theme-picker language-picker"'));
+    const en = await (await request("/", "GET", undefined, undefined, { Cookie: "dashy_language=en" })).text();
+    assert.ok(en.includes('lang="en"') && en.includes(messages.en.noDashboards) && !en.includes(messages.pt.noDashboards));
+    // Unknown choices fall back to the project language; error pages follow the cookie.
+    const unknown = await (await request("/", "GET", undefined, undefined, { Cookie: "dashy_language=fr" })).text();
+    assert.ok(unknown.includes('lang="pt"'));
+    const missing = await (await request("/dashboards/missing", "GET", undefined, undefined, { Cookie: "dashy_language=en" })).text();
+    assert.ok(missing.includes(messages.en.notFound) && missing.includes(messages.en.backToWorkspace));
+    assert.ok((await (await request("/dashboards/missing")).text()).includes(messages.pt.backToWorkspace));
   });
   if (mavenOnly) await withServer("maven-analytics", async (request) => {
     const data = await checkPage(
@@ -134,12 +150,18 @@ try {
     const styles = await Promise.all([...themed.matchAll(/href="([^"]+\.css)"/g)].map(async ([, href]) => (await request(href!)).text()));
     assert.ok(styles.some((css) => /\[data-theme~=(")?maven/.test(css)), "Maven stylesheet is bundled");
     assert.ok(styles.some((css) => /\[data-theme~=(")?zafir/.test(css)), "Zafir stylesheet is bundled");
+    // Filters, buttons and toolbars follow the viewer's language on the first response.
+    const overviewPt = await (await request("/dashboards/overview")).text();
+    assert.ok(overviewPt.includes(messages.pt.applyFilters) && overviewPt.includes(messages.pt.print) && !overviewPt.includes(messages.en.applyFilters));
+    const overviewEn = await (await request("/dashboards/overview", "GET", undefined, undefined, { Cookie: "dashy_language=en" })).text();
+    assert.ok(overviewEn.includes(messages.en.applyFilters) && overviewEn.includes(messages.en.refresh) && !overviewEn.includes(messages.pt.applyFilters));
     for (const [id, dataset] of [["product-explorer", "products"], ["market-explorer", "countries"]]) {
       const page = await checkPage(request, `/pages/${id}?category=Computers&channel=Online`);
       assert.equal(page.page.id, id);
       assert.equal(page.page.params.category, "Computers");
       assert.equal(page.page.definition.component, undefined);
       const html = await (await request(`/pages/${id}`)).text();
+      // The sample page's own text (project-authored, not translated).
       assert.ok(html.includes("Loading data"));
       assert.ok(html.includes("Custom pages"));
       const styles = [...html.matchAll(/href="(\/assets\/[^"?]+\.css)"/g)];
@@ -313,7 +335,12 @@ try {
       assert.equal((await checkPage(request)).catalog.locale, "pt-AO");
     });
     await withServer("runtime-added", async (request) => {
-      assert.equal((await checkPage(request)).catalog.locale, "en");
+      const data = await checkPage(request);
+      assert.equal(data.catalog.locale, "en");
+      // An English locale gives an English interface; a Portuguese choice also formats in pt.
+      assert.equal(data.catalog.language.name, "en");
+      const html = await (await request("/", "GET", undefined, undefined, { Cookie: "dashy_language=pt" })).text();
+      assert.ok(html.includes('lang="pt"') && html.includes(messages.pt.noDashboards));
     }, undefined, "en");
     // Theme selection is runtime configuration and must reach HTML before paint.
     for (const name of themeNames) {

@@ -2,10 +2,12 @@ import { createMemo, For, Show } from "solid-js";
 import type { Catalog } from "../core/types";
 import { groupNavigation } from "../core/navigation";
 import { Icon } from "./icons";
+import { useText } from "./language-picker";
 
 export function Brand(props: { application: string }) {
+  const t = useText();
   return (
-    <a class="brand" href="/" aria-label={`Dashy · ${props.application} home`}>
+    <a class="brand" href="/" aria-label={t().brandHome(props.application)}>
       <span class="brand-mark">
         <Icon name="chart-no-axes-combined" />
       </span>
@@ -22,12 +24,13 @@ export function DashboardNavigation(props: {
   selected?: string;
   mobile?: boolean;
 }) {
-  const groups = createMemo(() => groupNavigation(props.catalog));
+  const t = useText();
+  const groups = createMemo(() => groupNavigation(props.catalog, t()));
   return (
     <Show
       when={props.mobile}
       fallback={
-        <nav class="dashboard-nav" aria-label="Workspace navigation">
+        <nav class="dashboard-nav" aria-label={t().workspaceNavigation}>
           <For each={groups()}>
             {(group) => (
               <section class="nav-group" aria-label={group.label}>
@@ -52,11 +55,11 @@ export function DashboardNavigation(props: {
     >
       <Show when={groups().length > 0}>
         <label class="mobile-nav">
-          Page
+          {t().page}
           <select
             name="dashboard"
             autocomplete="off"
-            aria-label="Choose page"
+            aria-label={t().choosePage}
             value={props.selected || ""}
             onChange={(event) => {
               location.href = event.currentTarget.value;

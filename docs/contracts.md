@@ -490,7 +490,7 @@ GET /api/dashboard-export/:dashboard/:block?<filters>&_xf=…&_format=csv|xlsx&_
 `_format` defaults to `csv`. `_sort` must name a column of the dataset; without it the dataset's `defaultSort` applies, and an empty `_sort=` keeps the query's order (the Download menu always sends the table's current order). `_top` is `0` (all rows) or one of the dataset's `topN` options; without it, the dataset's initial choice applies. Options are checked before any query runs. Metric and unknown blocks return 404 and invalid options 400; errors loading the block keep their status (for example 403 when a dataset or query role denies access).
 
 - **CSV:** UTF-8 with a byte order mark, a header of column labels, raw values (dot decimals, ISO dates; the computed Other row is rounded to 15 significant digits) and CRLF line ends, quoted per RFC 4180. It holds the data rows, including Top N's Other row, but not subtotal or total rows. Text that a spreadsheet would run as a formula (starting with `=`, `+`, `-`, `@`, tab or carriage return) is prefixed with `'`, unless it is a number.
-- **Excel:** one sheet with typed cells, number formats from the column formats, bold subtotal and total rows, a frozen header and fitted widths. Numeric strings (DuckDB returns many counts and sums as strings) become numbers in number, currency, percent and aggregated columns; in columns without a format only plain decimals do, so codes such as `00123`, `+244…` or `1e5` stay text. `text` columns and integers beyond 2^53 always stay text; give columns of codes or versions such as `1.10` `format: { style: 'text' }`. Date columns become dates; timestamps without a time zone are read as UTC, as in the UI. Percent columns without `decimals` use one or two decimals (`0.0#%`). Subtotal labels use the raw group value. A second sheet, Filters, lists the dashboard, the block, every dashboard filter (`All` when unset, `Not applied to this block` for the block's own cross-filters and `unfiltered` parameters), the rows exported, the sort, the generation time and, for incomplete results, a note. A data sheet that would be named Filters or History is named Data. The workbook is written with a streaming writer: about a second for 100,000 rows of a few columns.
+- **Excel:** one sheet with typed cells, number formats from the column formats, bold subtotal and total rows, a frozen header and fitted widths. Numeric strings (DuckDB returns many counts and sums as strings) become numbers in number, currency, percent and aggregated columns; in columns without a format only plain decimals do, so codes such as `00123`, `+244…` or `1e5` stay text. `text` columns and integers beyond 2^53 always stay text; give columns of codes or versions such as `1.10` `format: { style: 'text' }`. Date columns become dates; timestamps without a time zone are read as UTC, as in the UI. Percent columns without `decimals` use one or two decimals (`0.0#%`). Subtotal labels use the raw group value. A second sheet, Filters, lists the dashboard, the block, every dashboard filter (`All` when unset, `Not applied to this block` for the block's own cross-filters and `unfiltered` parameters), the rows exported, the sort, the generation time and, for incomplete results, a note. A data sheet that would be named Filters or History is named Data. The Filters sheet, summary rows and Top N's Other row follow the viewer's interface language (Filtros, Todos, Outros… in Portuguese). The workbook is written with a streaming writer: about a second for 100,000 rows of a few columns.
 
 Files are named `<dashboard>-<block>-<YYYY-MM-DD>.<csv|xlsx>`. A result that reached its row limit exports what was returned, without totals, subtotals or Top N.
 
@@ -527,6 +527,34 @@ The cache is off unless `cache` is set. It keys results by query name, bound SQL
 `authenticate(request)` returns a principal, `{ principal, headers }` to add response headers such as a renewed cookie, `{ redirect, headers? }` to send an unauthenticated page request to a login page, or `null` (401). Redirects apply only to pages; data requests receive 401 with `WWW-Authenticate`. `authRoutes(request)` handles `/auth/*` before authentication. The optional `dashy/auth` module provides both with sessions, OpenID Connect and API keys: see [authentication](auth.md).
 
 The fragments above illustrate individual contracts. `samples/source-examples/dashy.config.ts` is the complete executable example; `samples/maven-analytics` demonstrates query options, cross-filters, drillthrough and every chart type.
+
+## Interface language
+
+```ts
+defineProject({
+  locale: "pt-AO",      // numbers and dates
+  language: "pt",       // Dashy's interface: "en" or "pt"; default from locale
+  languages: ["pt", "en"], // offered in the sidebar; false or [] hides the selector
+  // …
+});
+```
+
+Dashy's own text (buttons, menus, filter controls, empty and error states, table
+footers, drill-down, chart notes, exports, error and sign-in pages) comes from a
+message catalogue in `core/i18n.ts`, where every language has every message.
+Without `language`, a locale starting with `pt` gives Portuguese and any other
+English. Invalid values fail at startup with `Invalid Dashy language`.
+
+The sidebar selector stores the viewer's choice in the `dashy_language` cookie
+(path `/`, one year, `SameSite=Lax`; cleared when it equals the project language).
+The server reads it, so the first response, `<html lang>` and exports are already
+in that language; switching does not reload the page. A choice the project does
+not offer is ignored. Numbers and dates follow the chosen language, keeping the
+project locale when it is in that language (`pt-AO` stays `pt-AO` for Portuguese;
+English uses `en`). `/api/catalog` returns `locale` (the project's) and
+`language: { name, selectable }`. Labels the project defines are not translated.
+`createAuth({ language })` sets the sign-in pages' language when the viewer has no
+saved choice; otherwise they follow the browser's `Accept-Language`, then English.
 
 ## Branding and dashboard navigation
 

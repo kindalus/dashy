@@ -4,6 +4,7 @@
  */
 import { DashyError } from "./params.ts";
 import { filterValue } from "./filters.ts";
+import { textFor } from "./i18n.ts";
 import { applyTopN, isOtherRow, labelColumn, numericValue, shapeTable, summaryLabel, topNChoices, type ShapedTable } from "./tables.ts";
 import type {
   DatasetColumn, DatasetDefinition, Format, ParamDefinition, Params, QueryResult, Row, Scalar, TableSort,
@@ -61,7 +62,7 @@ export interface ExportInput {
   drilldown?: string;
   params: Record<string, ParamDefinition>;
   generatedAt: Date;
-  /** The project locale, so text sorts as it does on screen. */
+  /** The viewer's locale, so text sorts as it does on screen and the Filters sheet is in their language. */
   locale: string;
   options: ExportOptions;
 }
@@ -75,7 +76,7 @@ function shape(input: ExportInput): { table: ShapedTable; hidden: number; topN?:
   const { definition, result, options } = input;
   const complete = !result.truncated;
   const n = definition.topN && complete ? options.top ?? topNChoices(definition.topN).initial : 0;
-  const ranked = applyTopN(result.rows, definition, n, complete);
+  const ranked = applyTopN(result.rows, definition, n, complete, textFor(input.locale).other);
   return {
     table: shapeTable(ranked.rows, definition, options.sort, input.locale, complete, ranked.members),
     hidden: ranked.hidden,
@@ -149,11 +150,10 @@ function excelValue(value: Scalar | undefined, column: DatasetColumn): string | 
   if (NUMERIC_STYLES.has(style ?? "") || column.aggregate) return number;
   return PLAIN_DECIMAL.test(trimmed) ? number : value;
 }
-const INFO_SHEET = "Filters";
 /** A valid worksheet name that cannot clash with the Filters sheet or Excel's reserved History. */
-function sheetName(label: string): string {
-  const name = (label.replace(/[[\]:*?/\\]/g, " ").replace(/^'+|'+$/g, "").trim() || "Data").slice(0, 31).trim();
-  return [INFO_SHEET.toLowerCase(), "history"].includes(name.toLowerCase()) ? "Data" : name;
+function sheetName(label: string, info: string, data: string): string {
+  const name = (label.replace(/[[\]:*?/\\]/g, " ").replace(/^'+|'+$/g, "").trim() || data).slice(0, 31).trim();
+  return [info.toLowerCase(), "history"].includes(name.toLowerCase()) ? data : name;
 }
 
 type Cell = string | number | boolean | Date | null;
@@ -165,6 +165,7 @@ type Cell = string | number | boolean | Date | null;
 export async function toXlsx(input: ExportInput): Promise<Uint8Array<ArrayBuffer>> {
   const [{ default: ExcelJS }, { PassThrough }] = await Promise.all([import("exceljs"), import("node:stream")]);
   const { definition, result } = input;
+  const t = textFor(input.locale);
   const { table, hidden, topN } = shape(input);
   const labelKey = labelColumn(definition);
   const lines: { cells: () => Cell[]; bold: boolean }[] = [];
@@ -173,8 +174,8 @@ export async function toXlsx(input: ExportInput): Promise<Uint8Array<ArrayBuffer
   for (const entry of table.rows)
     lines.push(entry.kind === "row"
       ? { cells: values(entry.row), bold: false }
-      : { cells: values(entry.row, { key: entry.column, text: summaryLabel(entry.row[entry.column]) }), bold: true });
-  if (table.totals) lines.push({ cells: values(table.totals, labelKey ? { key: labelKey, text: "Total" } : undefined), bold: true });
+      : { cells: values(entry.row, { key: entry.column, text: summaryLabel(entry.row[entry.column], t) }), bold: true });
+  if (table.totals) lines.push({ cells: values(table.totals, labelKey ? { key: labelKey, text: t.total } : undefined), bold: true });
 
   // Streaming rows are written once, so measure column widths first.
   const widths = definition.columns.map((column) => column.label.length);
@@ -188,7 +189,7 @@ export async function toXlsx(input: ExportInput): Promise<Uint8Array<ArrayBuffer
   stream.on("data", (chunk: Buffer) => chunks.push(chunk));
   const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ stream, useStyles: true, useSharedStrings: false });
   workbook.created = input.generatedAt;
-  const sheet = workbook.addWorksheet(sheetName(definition.label), { views: [{ state: "frozen", ySplit: 1 }] });
+  const sheet = workbook.addWorksheet(sheetName(definition.label, t.filtersSheet, t.dataSheet), { views: [{ state: "frozen", ySplit: 1 }] });
   sheet.columns = definition.columns.map((column, i) => ({ key: column.key, width: Math.min(60, Math.max(10, widths[i]! + 2)) }));
   const formats = definition.columns.map((column) => numberFormat(column.format));
   const header = sheet.addRow(definition.columns.map((column) => column.label));
@@ -202,32 +203,32 @@ export async function toXlsx(input: ExportInput): Promise<Uint8Array<ArrayBuffer
   }
   sheet.commit();
 
-  const info = workbook.addWorksheet(INFO_SHEET);
+  const info = workbook.addWorksheet(t.filtersSheet);
   info.columns = [{ key: "name", width: 24 }, { key: "value", width: 48 }];
   const add = (cells: string[], bold = false) => {
     const row = info.addRow(cells);
     if (bold) row.font = { bold: true };
     row.commit();
   };
-  add(["Filter", "Value"], true);
-  add(["Dashboard", input.dashboardLabel]);
-  add(["Block", definition.label]);
+  add([t.filter, t.value], true);
+  add([t.dashboard, input.dashboardLabel]);
+  add([t.block, definition.label]);
   for (const name of input.filterNames) {
     const param = input.params[name];
     if (!param) continue;
-    add([param.label, input.ignored.includes(name) ? "Not applied to this block" : filterValue(input.filters[name], param)]);
+    add([param.label, input.ignored.includes(name) ? t.notAppliedToBlock : filterValue(input.filters[name], param, t)]);
   }
-  if (input.drilldown) add(["Drill-down", input.drilldown]);
+  if (input.drilldown) add([t.drillDown, input.drilldown]);
   if (definition.topN)
-    add(["Rows", topN && hidden
-      ? `${definition.topN.order === "bottom" ? "Bottom" : "Top"} ${topN} of ${result.rows.length}${definition.topN.other ? ", the rest as Other" : ""}`
-      : `All ${result.rows.length}`]);
+    add([t.rowsHeading, topN && hidden
+      ? t.rankedOf(definition.topN.order === "bottom" ? t.bottom(topN) : t.top(topN), result.rows.length, Boolean(definition.topN.other))
+      : t.allRows(result.rows.length)]);
   if (input.options.sort) {
     const column = definition.columns.find((c) => c.key === input.options.sort!.column)!;
-    add(["Sorted by", `${column.label} (${input.options.sort.direction === "asc" ? "ascending" : "descending"})`]);
+    add([t.sortedBy, `${column.label} (${input.options.sort.direction === "asc" ? t.ascending : t.descending})`]);
   }
-  add(["Generated", input.generatedAt.toISOString()]);
-  if (result.truncated) add(["Note", "Row limit reached: the data is incomplete, so totals, subtotals and Top N were skipped."]);
+  add([t.generated, input.generatedAt.toISOString()]);
+  if (result.truncated) add([t.note, t.incompleteNote]);
   info.commit();
   await workbook.commit();
   return new Uint8Array(Buffer.concat(chunks));

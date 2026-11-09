@@ -4,6 +4,8 @@ import { For, Show } from "solid-js";
 import type { ThemeName } from "../core/theme";
 import { Brand, DashboardNavigation } from "./navigation";
 import { ThemePicker } from "./theme-picker";
+import { LanguagePicker, useText } from "./language-picker";
+import type { Language } from "../core/i18n";
 
 /** What the page reports for the top bar and the terminal status line. */
 export interface PageStatus {
@@ -15,7 +17,9 @@ export interface PageStatus {
 export function Workspace(props: {
   catalog: Catalog; selected?: string; label?: string; kind: string; children: JSX.Element;
   theme?: ThemeName; onThemeChange?: (name: ThemeName) => void; status?: PageStatus;
+  language?: Language; onLanguageChange?: (name: Language) => void;
 }) {
+  const t = useText();
   // Every page a viewer can open directly: dashboards without required parameters, then custom
   // pages. The current page is always listed, so its tab can be marked.
   const tabs = () => [
@@ -29,23 +33,25 @@ export function Workspace(props: {
     ? Object.entries(props.catalog.dashboards).filter(([, d]) => !d.required?.length)
     : [];
   return <div class="workspace">
-    <a class="skip-link" href="#main">Skip to content</a>
+    <a class="skip-link" href="#main">{t().skipToContent}</a>
     <aside class="sidebar">
       <Brand application={props.catalog.name} />
       <DashboardNavigation catalog={props.catalog} selected={props.selected} />
       <div class="sidebar-footer">
         {props.onThemeChange && <ThemePicker theme={props.catalog.theme} active={props.theme ?? props.catalog.theme.name} onChange={props.onThemeChange} />}
-        <span class="sidebar-status"><span class="status-dot" />Read-only workspace</span>
+        {props.onLanguageChange && props.catalog.language && <LanguagePicker language={props.catalog.language}
+          active={props.language ?? props.catalog.language.name} onChange={props.onLanguageChange} />}
+        <span class="sidebar-status"><span class="status-dot" />{t().readOnlyWorkspace}</span>
       </div>
     </aside>
     <div class="main-column">
       <header class="topbar">
-        <span class="breadcrumb">{props.kind} <span aria-hidden="true">/</span>{" "}<strong>{props.label || "Workspace"}</strong></span>
+        <span class="breadcrumb">{props.kind} <span aria-hidden="true">/</span>{" "}<strong>{props.label || t().workspace}</strong></span>
         {/* Theme variants of the bar; each theme shows the parts its style uses. */}
-        <span class="topbar-title" aria-hidden="true">{props.label || "Workspace"}</span>
+        <span class="topbar-title" aria-hidden="true">{props.label || t().workspace}</span>
         <span class="topbar-product" aria-hidden="true">{props.catalog.name}</span>
         <Show when={chapters().length > 1}>
-          <nav class="topbar-chapters" aria-label="Chapters">
+          <nav class="topbar-chapters" aria-label={t().chapters}>
             <For each={chapters()}>
               {([id, dashboard]) => (
                 <a href={`/dashboards/${encodeURIComponent(id)}`} aria-current={props.selected === `/dashboards/${encodeURIComponent(id)}` ? "page" : undefined}>{dashboard.label}</a>
@@ -62,7 +68,7 @@ export function Workspace(props: {
       {/* Bottom bars of the layout, below the content on every page: sheet or page tabs
           (Excel, Power BI) and a terminal status line (Claude Code). Other themes hide them. */}
       <Show when={tabs().length > 1}>
-        <nav class="page-tabs" aria-label="Pages">
+        <nav class="page-tabs" aria-label={t().pages}>
           <For each={tabs()}>
             {(tab) => <a href={tab.href} aria-current={tab.href === props.selected ? "page" : undefined}>{tab.label}</a>}
           </For>
@@ -73,7 +79,7 @@ export function Workspace(props: {
           <span class="status-ok">●</span>
           <span>{props.status!.text}</span>
           <Show when={props.status!.requests}>
-            <span>{props.status!.requests} requests{props.status!.ms !== undefined ? ` · ${props.status!.ms} ms` : ""}</span>
+            <span>{t().requests(props.status!.requests!)}{props.status!.ms !== undefined ? ` · ${props.status!.ms} ms` : ""}</span>
           </Show>
           <span>{props.catalog.name}</span>
         </div>

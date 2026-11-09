@@ -2,6 +2,7 @@ import type { ProjectDefinition, ProjectConfig } from "./types.ts";
 import { dashboardIconNames } from "./icons.ts";
 import { defineApiRoutes } from "./api-definition.ts";
 import { resolveTheme } from "./theme.ts";
+import { resolveLanguage } from "./i18n.ts";
 import { isValidTimezone, relativeDefaultError } from "./dates.ts";
 import { isReservedParam, parseParams } from "./params.ts";
 import { resolveLimits, parseBytes } from "./limits.ts";
@@ -23,6 +24,7 @@ export function defineProject<const T extends ProjectDefinition>(
       throw new Error("Invalid Dashy project: locale must be a language tag such as pt, en or pt-AO.");
     }
   }
+  resolveLanguage(project);
   const assert = (condition: unknown, message: string) => {
     if (!condition) throw new Error(`Invalid Dashy project: ${message}`);
   };

@@ -86,6 +86,7 @@ Usar `import { defineProject } from "dashy"` para uma definição completa. Numa
 - `description`: descrição opcional.
 - `dataDir`: diretório dos dados, relativo ao ficheiro de configuração; por omissão, a pasta desse ficheiro.
 - `locale`: formatação de números, moedas e datas. Prioridade: `--locale`, `DASHY_LOCALE`, configuração do projeto, `pt`.
+- `language`: idioma da interface do Dashy, `"en"` ou `"pt"`. Sem ele, um `locale` português dá `pt` e qualquer outro `en`. O utilizador pode mudar de idioma na barra lateral (cookie `dashy_language`, aplicado logo na primeira resposta); números e datas passam a seguir o idioma escolhido, mantendo o `locale` do projeto quando é desse idioma. `languages: ["pt"]` limita as opções e `languages: false` esconde o seletor. Os textos do projeto (dashboards, datasets, parâmetros) não são traduzidos.
 - `theme`: tema e cantos dos controlos.
 - `params`, `sources`, `queries`, `metrics`, `datasets`, `dashboards`: registos obrigatórios, mesmo quando vazios (`{}`).
 - `pages`: registo opcional de páginas, também carregado de `extensions/index.ts`.
@@ -285,7 +286,7 @@ As tabelas ordenam por qualquer coluna (clique no cabeçalho; `defaultSort: { co
 
 Séries cartesianas aceitam `reference: [{ kind: "average" | "median" | "min" | "max" | "constant", value?, label? }]`, `trend: "linear"` e `forecast: { periods, method?: "linear" | "holt" | "seasonal", season? }`, calculados no browser. A projecção exige datas igualmente espaçadas no eixo x (`YYYY`, `YYYY-MM`, `YYYY-Qn` ou `YYYY-MM-DD`) e um valor em cada período; caso contrário, o gráfico mostra uma nota. Não se aplicam a séries empilhadas e não aparecem na tabela, no export nem na API. Ver [linhas de referência, tendências e projecções](docs/contracts.md#reference-lines-trends-and-forecasts).
 
-Os formatos são `number`, `currency`, `percent`, `text` e `date`, com `decimals` opcional. Configurar o formato da coluna para tabelas e o da série para os valores do tooltip. Percentagens usam frações: `0.25` corresponde a 25%. `currency` define explicitamente a moeda, por exemplo `AOA`, `EUR` ou `USD`; se o estilo for `currency` e a moeda estiver omitida, usa USD. `locale` controla a apresentação, não converte moedas nem traduz os textos da interface. A formatação de datas usa UTC.
+Os formatos são `number`, `currency`, `percent`, `text` e `date`, com `decimals` opcional. Configurar o formato da coluna para tabelas e o da série para os valores do tooltip. Percentagens usam frações: `0.25` corresponde a 25%. `currency` define explicitamente a moeda, por exemplo `AOA`, `EUR` ou `USD`; se o estilo for `currency` e a moeda estiver omitida, usa USD. `locale` controla a apresentação e não converte moedas; os textos da interface seguem `language`. A formatação de datas usa UTC.
 
 Os dashboards têm uma grelha de 12 colunas, com `width` entre 1 e 12, e adaptação a ecrãs pequenos. Cada bloco tem um `id` único no dashboard. Um bloco dataset pode definir `view: "table"`. A rota deriva do nome do registo: `/dashboards/<nome>`; `/` abre o primeiro dashboard autorizado, ou a primeira página autorizada quando não existem dashboards visíveis.
 
@@ -462,7 +463,8 @@ As props públicas `PageProps`, importadas de `dashy/ui`, contêm:
 - `page`: identificador, metadados da página e parâmetros validados.
 - `params`: os mesmos parâmetros, depois dos defaults e da validação.
 - `catalog`: catálogo autorizado, incluindo tema, definições dos parâmetros e navegação.
-- `locale`: locale efetivo da aplicação.
+- `locale`: locale de formatação do utilizador (o do projeto, ou o do idioma escolhido quando é outro).
+- `language`: idioma da interface que o utilizador vê (`en` ou `pt`), para os textos da própria página.
 
 Dashy fornece título, descrição, branding, sidebar e layout responsivo. A página implementa o seu conteúdo e formulários. Um formulário GET para a rota atual volta a validar os parâmetros no servidor. A prioridade dos valores é pedido, `page.defaults`, `parameter.default`; parâmetros desconhecidos são rejeitados.
 
