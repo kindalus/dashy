@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { actionsFor, applyAction, backLink, drillthroughHref, drillthroughTargets, type ActionContext } from "../src/actions";
+import { actionsFor, applyAction, backLink, drillthroughHref, drillthroughTargets, selectionFor, type ActionContext } from "../src/actions";
 import { buildChart, type ChartTheme } from "../src/chart-options";
 import { boxplotStats, chartKeyColumns } from "../core/charts";
 import type { Catalog, ChartDefinition, DatasetDefinition, QueryResult } from "../core/types";
@@ -68,6 +68,20 @@ describe("click actions", () => {
     expect(second).toEqual({ params: { category: ["Toys"] }, crossFilters: [{ block: "table", param: "category" }] });
     expect(applyAction(second.params, second.crossFilters, catalog, "table", { kind: "clear", param: "category", label: "", display: "" }))
       .toEqual({ params: { category: [] }, crossFilters: [] });
+  });
+  test("a block that originates several cross-filters selects rows matching all of them", () => {
+    const columns = [clientColumn, categoryColumn, { key: "units", label: "Units" }];
+    const params = { client: "C1", category: ["Food"] };
+    const both = [{ block: "table", param: "client" }, { block: "table", param: "category" }];
+    const selected = selectionFor(params, both, "table", columns)!;
+    expect(selected({ id: "C1", name: "One", category: "Food" })).toBe(true);
+    // Matching the first origin alone is not enough.
+    expect(selected({ id: "C1", name: "One", category: "Toys" })).toBe(false);
+    expect(selected({ id: "C2", name: "Two", category: "Food" })).toBe(false);
+    // Origins of other blocks never select rows here.
+    const one = selectionFor(params, [{ block: "chart", param: "category" }, { block: "table", param: "client" }], "table", columns)!;
+    expect(one({ id: "C1", name: "One", category: "Toys" })).toBe(true);
+    expect(selectionFor(params, [{ block: "chart", param: "category" }], "table", columns)).toBeUndefined();
   });
   test("back links accept only same-site dashboard and page paths", () => {
     expect(backLink(catalog, "/dashboards/sales?category=Food")).toEqual({ href: "/dashboards/sales?category=Food", label: "Sales" });

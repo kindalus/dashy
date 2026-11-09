@@ -81,6 +81,26 @@ export function isSelected(params: Params, param: string, value: Scalar): boolea
 }
 
 /**
+ * Rows a cross-filter origin block highlights. The block ignores every filter it
+ * originated, so a row is selected only when it matches all of them.
+ */
+export function selectionFor(
+  params: Params,
+  crossFilters: readonly CrossFilterOrigin[],
+  blockId: string,
+  columns: readonly DatasetColumn[],
+): ((row: Row) => boolean) | undefined {
+  const targets = crossFilters
+    .filter((origin) => origin.block === blockId)
+    .flatMap((origin) => {
+      const target = columns.map(columnTarget).find((t) => t?.name === origin.param);
+      return target ? [target] : [];
+    });
+  if (!targets.length) return undefined;
+  return (row) => targets.every((target) => isSelected(params, target.name, row[target.from] ?? null));
+}
+
+/**
  * Actions for one clicked value. Cross-filter comes first when the dashboard
  * filters by the parameter; drillthrough destinations follow.
  */
