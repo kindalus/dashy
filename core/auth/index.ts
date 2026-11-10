@@ -226,8 +226,10 @@ export function createAuth(options: AuthOptions): Auth {
   function discover(): Promise<OidcMetadata> {
     return metadata ??= (async () => {
       const issuer = oidc!.issuer.replace(/\/$/, "");
-      const response = await fetch(`${issuer}/.well-known/openid-configuration`, { signal: AbortSignal.timeout(10_000) })
-        .catch(() => fetch(`${issuer}/.well-known/oauth-authorization-server`, { signal: AbortSignal.timeout(10_000) }));
+      const get = (path: string) => fetch(`${issuer}${path}`, { signal: AbortSignal.timeout(10_000) });
+      let response = await get("/.well-known/openid-configuration").catch(() => undefined);
+      // OpenAuth publishes only the OAuth authorization server metadata (RFC 8414).
+      if (!response?.ok) response = await get("/.well-known/oauth-authorization-server");
       if (!response.ok) throw new Error(`OIDC discovery failed with ${response.status}`);
       const body = await response.json() as OidcMetadata;
       for (const key of ["authorization_endpoint", "token_endpoint", "jwks_uri"] as const)

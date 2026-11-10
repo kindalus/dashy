@@ -29,6 +29,12 @@ beforeAll(async () => {
         return Response.json({
           issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token`, jwks_uri: `${issuer}/jwks`,
         });
+      // An OpenAuth-style issuer under /openauth: no OpenID discovery, only OAuth server metadata.
+      if (url.pathname === "/openauth/.well-known/oauth-authorization-server")
+        return Response.json({
+          issuer: `${issuer}/openauth`, authorization_endpoint: `${issuer}/openauth/authorize`,
+          token_endpoint: `${issuer}/openauth/token`, jwks_uri: `${issuer}/jwks`,
+        });
       if (url.pathname === "/jwks") return Response.json({ keys: [jwk] });
       if (url.pathname === "/token" && request.method === "POST")
         return Response.json(await tokenResponse(new URLSearchParams(await request.text()), request.headers.get("authorization")));
@@ -67,6 +73,16 @@ describe("OpenID Connect", () => {
     expect(target.searchParams.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(target.searchParams.get("scope")).toBe("openid profile email");
     expect(cookie).toBeDefined();
+  });
+  test("an issuer without OpenID discovery falls back to the OAuth server metadata", async () => {
+    const auth = createAuth({
+      session: { secret, secure: true },
+      baseUrl: "https://bi.example.com",
+      oidc: { issuer: `${issuer}/openauth`, clientId: "dashy", redirectPath: "/auth/external/callback" },
+      roles: () => ["finance"],
+    });
+    const { target } = await login(auth);
+    expect(target.origin + target.pathname).toBe(`${issuer}/openauth/authorize`);
   });
   test("a verified id_token creates a session and returns to the original page", async () => {
     const auth = oidcAuth();
