@@ -3,6 +3,7 @@ import { DashyEngine, readCrossFilters } from "./engine";
 import { exportFile, readExportOptions } from "./export";
 import { describeDrilldown, readDrilldowns } from "./drilldown";
 import { DashyError, isDashyError, readParams } from "./params";
+import { resolveLimits } from "./limits";
 import type { AuthResult, Principal } from "./types";
 import {
   formattingLocale, messages, readLanguageCookie, resolveLanguage, viewerLanguage, type Language,
@@ -110,10 +111,29 @@ function withHeaders(response: Response, extra: Headers): Response {
 }
 /** Options endpoint keys; parameter names cannot start with an underscore. */
 const optionKeys = ["_q", "_value", "_limit"];
+/**
+ * Seconds a data request may stay silent: the queue wait plus the query time,
+ * with a margin. Bun closes connections idle for 10 s by default, which would
+ * cut slow queries before their own timeout. Bun accepts at most 255.
+ */
+export function requestIdleSeconds(limits: ProjectLimits): number {
+  const resolved = resolveLimits(limits);
+  return Math.min(255, Math.ceil((resolved.queueTimeoutMs + resolved.queryTimeoutMs) / 1000) + 5);
+}
+type ProjectLimits = Parameters<typeof resolveLimits>[0];
+/** Bun's per-request idle timeout, when the request is served by Bun (srvx exposes the server). */
+function extendIdleTimeout(request: Request, seconds: number) {
+  const server = (request as { runtime?: { bun?: { server?: { timeout?: (request: Request, seconds: number) => void } } } })
+    .runtime?.bun?.server;
+  try { server?.timeout?.(request, seconds); } catch { /* not served by Bun */ }
+}
+
 export function createApiHandler(engine: DashyEngine) {
   const custom = createCustomApiHandler(engine);
+  const idleSeconds = requestIdleSeconds(engine.project.limits);
   return async (request: Request): Promise<Response> => {
     let auth: Authentication | undefined;
+    extendIdleTimeout(request, idleSeconds);
     try {
       if (request.url.length > 16_384) throw new DashyError("Request URL is too long", 414);
       const path = new URL(request.url).pathname;

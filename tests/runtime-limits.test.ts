@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DashyEngine } from "../core/engine";
-import { createApiHandler } from "../core/http";
+import { createApiHandler, requestIdleSeconds } from "../core/http";
 import { DatabasePool, parseBytes } from "../core/pool";
 import { QueryCache } from "../core/cache";
 import { resolveSourcePath, sourceHasFiles } from "../core/sources";
@@ -223,4 +223,10 @@ describe("result cache", () => {
     expect((await (await api(new Request("http://localhost/api/queries/cached"))).json()).rows[0].n).toBe(3);
     expect((await (await api(new Request("http://localhost/api/queries/cached?refresh=true"))).json()).rows[0].n).toBe(4);
   });
+});
+
+test("data requests may stay silent for the queue wait plus the query time, within Bun's limit", () => {
+  expect(requestIdleSeconds(undefined)).toBe(50);
+  expect(requestIdleSeconds({ queueTimeoutMs: 5_000, queryTimeoutMs: 20_000 })).toBe(30);
+  expect(requestIdleSeconds({ queueTimeoutMs: 600_000, queryTimeoutMs: 600_000 })).toBe(255);
 });
