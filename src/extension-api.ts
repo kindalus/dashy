@@ -4,6 +4,8 @@ import type { Language } from "../core/i18n";
 export type { Language } from "../core/i18n";
 export type { Catalog, PageShell, Params, QueryResult, Scalar } from "../core/types";
 export { Spinner } from "./spinner";
+/** The themed select used by the dashboards, for custom pages that want the same control. */
+export { Select, type SelectOption } from "./select";
 export { formatValue } from "./format";
 export interface PageProps {
   page: PageShell;

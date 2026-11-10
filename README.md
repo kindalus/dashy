@@ -128,7 +128,8 @@ The implementation contains `dashy.config.ts`, `artifacts/index.ts`, and
 override individual paths. `DASHY_THEME` and `DASHY_LOCALE` override presentation.
 Pages share the workspace, icons, navigation groups and authentication, and appear
 at `/pages/:id`. Page components and styles require a build; external server
-configuration and artifacts can change with a restart.
+configuration and artifacts can change with a restart. Pages import data helpers,
+`formatValue`, `Spinner` and the dashboards' themed `Select` from `dashy/ui`.
 
 See [the complete setup and page contract](llms.txt#implementações-externas-e-variáveis-de-ambiente)
 and the runnable [external application example](examples/external-application/).
