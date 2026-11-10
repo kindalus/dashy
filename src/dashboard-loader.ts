@@ -35,6 +35,8 @@ export class DashboardLoader {
     private request: typeof fetch = fetch,
     /** Shown when a failed request gives no reason, in the interface language. */
     private fallbackError = "Unable to load data",
+    /** Where each request group loads from, and extra request options (embeds send their token). */
+    private endpoint: { path?: (requestId: string) => string; init?: RequestInit } = {},
   ) {
     this.state = Object.fromEntries(dashboard.requests.map(({ id }) => [
       id, { loading: true, error: "" },
@@ -75,10 +77,9 @@ export class DashboardLoader {
     try {
       // Native browser fetch must not receive the loader as its `this` value.
       const request = this.request;
-      const response = await request(
-        `/api/dashboard-data/${encodeURIComponent(this.dashboard.id)}/${encodeURIComponent(id)}?${this.params}`,
-        { signal: controller.signal },
-      );
+      const path = this.endpoint.path?.(id)
+        ?? `/api/dashboard-data/${encodeURIComponent(this.dashboard.id)}/${encodeURIComponent(id)}`;
+      const response = await request(`${path}?${this.params}`, { ...this.endpoint.init, signal: controller.signal });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || this.fallbackError);
       if (generation !== this.generation) return;

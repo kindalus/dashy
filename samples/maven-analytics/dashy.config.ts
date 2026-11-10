@@ -1,4 +1,5 @@
 import { defineProject } from "../../core/project";
+import { createAuth } from "../../core/auth";
 import type {
   DashboardBlock,
   Format,
@@ -49,8 +50,25 @@ for (const column of ["revenue", "profit", "orders"])
   metrics[column] = { ...metrics[column]!, compare: { column: `previous_${column}`, label: "vs previous period" } };
 metrics.revenue = { ...metrics.revenue!, sparkline: { dataset: "revenue_forecast", value: "revenue" } };
 
+// Embedding demo. The sample stays public; an API key authenticates the host
+// application's server, which mints embed tokens (see docs/embedding.md).
+// The fallbacks exist only so this offline sample runs as is: a real project reads
+// its key, session and embed secrets from the environment and has no defaults.
+const apiKey = process.env.MAVEN_API_KEY ?? "maven-sample-api-key";
+const auth = createAuth({
+  session: { secret: process.env.MAVEN_SESSION_SECRET ?? "maven-sample-session-secret-not-for-production" },
+  apiKeys: { keys: { [apiKey]: ["embedder"] } },
+});
+
 export default defineProject({
   name: "Maven Electronics",
+  // Anonymous visitors keep reading the public sample; a presented API key must be valid.
+  authenticate: async (request) => (await auth.authenticate(request)) ?? { roles: [] },
+  embed: {
+    secret: process.env.MAVEN_EMBED_SECRET ?? "maven-sample-embed-secret-not-for-production",
+    // The test host of scripts/embed-host.ts; other origins cannot frame the embeds.
+    origins: (process.env.MAVEN_EMBED_ORIGINS ?? "http://localhost:3731,http://127.0.0.1:3731").split(",").map((origin) => origin.trim()),
+  },
   description: "Global electronics retailer · sample data",
   // A project theme: its stylesheet lives in extensions and is checked at build.
   themes: {

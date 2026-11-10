@@ -213,6 +213,8 @@ export function createAuth(options: AuthOptions): Auth {
           roles: payload.roles, subject: payload.sub,
           ...(payload.email ? { email: payload.email } : {}),
           ...(payload.name ? { name: payload.name } : {}),
+          // A browser session, even one that began with an API key on a page.
+          via: payload.provider === "oidc" ? "oidc" : "session",
         },
         renew: remaining < ttl / 2,
       };
@@ -362,7 +364,7 @@ export function createAuth(options: AuthOptions): Auth {
     if (presented !== null && presented !== undefined) {
       const roles = apiKeys ? await apiKeys.roles(presented) : undefined;
       if (!roles) throw new DashyError("Invalid API key", 401);
-      const principal = { roles, subject: `api-key:${sha256(presented).slice(0, 12)}` };
+      const principal: Principal = { roles, subject: `api-key:${sha256(presented).slice(0, 12)}`, via: "api-key" };
       if (queryKey !== null && pageRequest) {
         // Exchange the key for a session and drop it from the address bar and history.
         url.searchParams.delete("api_key");

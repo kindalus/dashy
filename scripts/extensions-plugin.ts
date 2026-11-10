@@ -5,6 +5,7 @@ import type { Plugin } from "vite";
 import type { ProjectDefinition } from "../core/types.ts";
 import { checkTheme, themeTokens } from "../core/theme-check.ts";
 import { defaultThemeName, themeEntries } from "../core/theme.ts";
+import { themeTokenMap } from "../core/theme-tokens.ts";
 
 const engineThemes = resolve(dirname(fileURLToPath(import.meta.url)), "../src/themes");
 
@@ -55,18 +56,22 @@ export async function extensionsPlugin(project: ProjectDefinition, extensionsDir
     entries.push(`${JSON.stringify(id)}: { assets: ${assetName}, component: ${JSON.stringify(page.component.replace(/^\.\//, ""))}, load: () => import(${JSON.stringify(path)}) }`);
   }
   const sheets = await projectThemeSheets(project, extensionsDir);
+  // Server-side SVG charts have no computed styles: every theme's resolved tokens, built in.
+  const tokens = await themeTokenMap(project, extensionsDir);
   return {
     name: "dashy-extensions",
     enforce: "pre",
     resolveId(id) {
       if (id === "virtual:dashy-pages") return "\0virtual:dashy-pages";
       if (id === "virtual:dashy-themes") return "\0virtual:dashy-themes";
+      if (id === "virtual:dashy-theme-tokens") return "\0virtual:dashy-theme-tokens";
     },
     configureServer(server) { server.watcher.add(extensionsDir); },
     load(id) {
       if (id === "\0virtual:dashy-pages") return `${assets.join("\n")}\nexport const pages = {${entries.join(",\n")}};`;
       // Project theme stylesheets join the client CSS, after the engine's themes.
       if (id === "\0virtual:dashy-themes") return sheets.map((path) => `import ${JSON.stringify(path)};`).join("\n");
+      if (id === "\0virtual:dashy-theme-tokens") return `export default ${JSON.stringify(tokens)};`;
     },
   };
 }

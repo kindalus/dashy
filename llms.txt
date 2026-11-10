@@ -15,6 +15,7 @@ Este guia destina-se a agentes e programadores que implementam uma solução com
 - [Implementação externa](examples/external-application/): dashboard e página Customer 360 com configuração, artefactos e dados separados.
 - [API pública](core/index.ts), [API de páginas](src/extension-api.ts) e [autenticação](core/auth/index.ts): imports `dashy`, `dashy/types`, `dashy/ui` e `dashy/auth`.
 - [Autenticação](docs/auth.md): sessão, OpenID Connect, API keys e hook próprio.
+- [Incorporação](docs/embedding.md): SVG estático e iframe interativo com tokens assinados.
 - [Deployment em contentores](docs/deployment.md): imagem base, imagem do projeto, `/healthz` e dados montados.
 - [Source Examples](samples/source-examples/dashy.config.ts): projeto completo com dados sintéticos nos seis formatos suportados.
 - [Maven Analytics](samples/maven-analytics/dashy.config.ts): projeto completo com dados de retalho, sete dashboards, duas páginas customizadas, opções vindas de queries (multiselect e autocomplete), cross-filter, drillthrough para o detalhe do produto e uma galeria com todos os tipos de gráfico e dois drill-downs (Categoria → Marca → Produto e Ano → Trimestre → Mês → Dia).
@@ -227,7 +228,7 @@ Defaults relativos são avaliados em cada pedido, no `timezone` do projeto (por 
 
 Opções podem vir de uma query: `options: { query: "client_options", value: "id", label: "name", search: true }`. A query de opções pode aceitar outros parâmetros (por exemplo marcas filtradas pela categoria), mas não o próprio. `search: true` mostra um autocomplete com pesquisa no servidor; sem `search`, arrays mostram um multiselect e os restantes um select. Selects, predefinições de período, Top N e o seletor de tema usam um controlo próprio com as cores do tema (padrão WAI-ARIA select-only combobox: setas, Enter, Escape, escrever para saltar; campo de filtro com mais de oito opções), não o select nativo do browser. Os valores são validados pelo tipo e ligados ao SQL; `strict: true` confirma que existem nas opções antes de qualquer query de dados. Endpoint: `GET /api/params/:nome/options?_q=&_value=&_limit=`.
 
-`api_key`, `refresh`, `_from`, `_xf`, `_dd`, `_format`, `_sort` e `_top` são chaves reservadas do motor e não podem ser nomes de parâmetros.
+`api_key`, `token`, `refresh`, `_from`, `_xf`, `_dd`, `_format`, `_sort`, `_top`, `_width`, `_height`, `_theme` e `_lang` são chaves reservadas do motor e não podem ser nomes de parâmetros.
 
 Exemplos HTTP:
 
@@ -316,10 +317,14 @@ Endpoints GET:
 /api/dashboard-export/:dashboard/:block
 /api/queries/:name
 /api/metrics/:name
-/api/datasets/:name
+/api/datasets/:name            ?_format=json|svg
 /api/params/:name/options
+/api/embed/shell               token de incorporação em X-Dashy-Embed
+/api/embed/data/:request
 /healthz
 ```
+
+`POST /api/embed` emite tokens de incorporação; ver [Incorporação](#incorporação-svg-e-iframe).
 
 O catálogo contém metadados de apresentação, o `timezone` e os datasets legíveis com os parâmetros aceites e as anotações `param` das colunas, para que agentes encadeiem datasets. Queries e datasets devolvem `{ columns, rows, truncated, durationMs }`; métricas devolvem `{ value }`; o endpoint agregado de dashboard inclui definição, parâmetros, blocos e `generatedAt`. O endpoint independente devolve `{ blocks, generatedAt }`. Na vista de gráfico, o menu Download também guarda PNG ou SVG com título e filtros, gerados no browser; "Print / PDF" imprime o dashboard (tabelas com todas as linhas). Ver [imagens e impressão](docs/contracts.md#images-and-printing). `/api/dashboard-export/:dashboard/:block` descarrega um bloco dataset tal como aparece (filtros, `_xf`, `_sort=<coluna>:asc|desc`, `_top=<n>`) em CSV ou Excel (`_format=csv|xlsx`); ver [export](docs/contracts.md#export). Os IDs `:request` vêm do plano `dashboard.requests` incluído no HTML, não são nomes arbitrários de datasets.
 
@@ -342,12 +347,60 @@ O módulo opcional `dashy/auth` fornece ambos: `...createAuth({ session: { secre
 - **Sessão:** cookie JWT HttpOnly.
 - **OIDC:** authorization code com PKCE; aceita `id_token`, userinfo ou access token JWT do OpenAuth.
 - **API keys:** `X-API-Key`, `Authorization: Bearer` ou `?api_key=`. Nas páginas, a chave da query é trocada por sessão e removida do URL.
+- **Origem do principal:** `via` é `api-key`, `session` ou `oidc`; só `api-key` emite tokens de incorporação. Um hook próprio marca as suas chaves com `via: "api-key"`.
 
 As roles do utilizador vêm de uma função do projeto, por exemplo por email. Ver [autenticação](docs/auth.md).
 
 Queries, métricas, datasets, dashboards, páginas e rotas API customizadas aceitam `roles`. Uma lista não vazia exige pelo menos uma role correspondente. O acesso tem de ser permitido em cada nível utilizado. Sem roles, esse artefacto não acrescenta uma restrição. Proteger a query quando os próprios dados são privados: restringir apenas um dashboard não restringe o endpoint direto da query. Grupos de navegação não concedem permissões. As roles restringem artefactos, sem implementar isolamento automático por linha ou tenant.
 
 Configurações e builders são código de confiança executado no servidor. Autenticação e credenciais ficam nesse lado. Os pedidos HTTP apenas escolhem artefactos registados e valores de parâmetros; não existe um endpoint de SQL arbitrário.
+
+## Incorporação: SVG e iframe
+
+Outra aplicação pode mostrar gráficos e dashboards do Dashy com um token assinado, em duas formas:
+
+- **SVG estático** de um gráfico de dataset, desenhado no servidor com as cores do tema, título e legenda dos filtros: `/api/datasets/<dataset>?_format=svg&token=…` (`_width`, `_height`, por omissão 800 × 400, limitados a 200–2000 × 150–1500). Serve para `<img>`, e-mails e documentos. Também funciona com autenticação normal, com `_theme` e `_lang` entre os oferecidos pelo projeto.
+- **Iframe interativo** de um dashboard ou de um único dataset: `/embed/dashboards/<dashboard>?token=…` ou `/embed/datasets/<dataset>?token=…`. O visitante usa apenas o rato: tooltips, cross-filter entre os blocos incorporados e drill-down dentro do bloco. Não há barra de filtros, drillthrough, barra de ferramentas do bloco (download, gráfico/tabela, Top N, impressão), sidebar, barra superior nem seletores de tema ou idioma.
+
+Ativar no projeto:
+
+```ts
+embed: {
+  secret: process.env.DASHY_EMBED_SECRET!,   // pelo menos 32 caracteres
+  origins: ["https://portal.example.com"],   // origens exatas que podem enquadrar o iframe (http só para localhost)
+  maxTtlSeconds: 3600,                       // por omissão 86 400, no máximo 30 dias
+},
+```
+
+Sem `embed`, a incorporação está desativada: `POST /api/embed` e `/embed/*` devolvem 404 e `?token=` é ignorado. Valores inválidos param o arranque com `Invalid Dashy embed: …`.
+
+**Emissão.** Só um principal autenticado com API key (servidor a servidor, `via: "api-key"`) emite tokens; sessões do browser, sessões OIDC e tokens de incorporação recebem 403. O servidor da aplicação anfitriã chama:
+
+```sh
+curl -s https://bi.example.com/api/embed -H 'X-API-Key: …' -H 'X-Dashy-Request: 1' \
+  -H 'Content-Type: application/json' \
+  -d '{ "dashboard": "sales", "params": { "region": "North" }, "ttlSeconds": 600, "language": "pt" }'
+# { "token": "…", "expiresAt": "…", "urls": { "iframe": "/embed/dashboards/sales?token=…", "svg": ["/api/datasets/…?_format=svg&token=…"] } }
+```
+
+O corpo indica exatamente um de `dashboard` ou `dataset`; `params` são validados como num pedido normal e só aceitam parâmetros do recurso; `ttlSeconds` (por omissão 600) não pode exceder `maxTtlSeconds`; `language` e `theme` têm de ser oferecidos pelo projeto. A API key tem de ler o recurso em todos os níveis (dashboard, métricas, datasets e queries, incluindo níveis de drill-down). O token é um JWT HS256 com `aud: "dashy-embed"` e guarda o recurso, os parâmetros fixos, as roles da chave, o subject, o idioma e o tema.
+
+**Segurança.** Os parâmetros fixos no token nunca mudam: substituem os valores do pedido, cross-filters sobre eles são ignorados e o drill-down não os alarga. Os restantes começam nos valores por omissão do dashboard e mudam só por cross-filter e drill-down, mas o browser envia-os nos pedidos: **fixar no token todos os parâmetros que não podem mudar** (tenant, cliente, região). Blocos em `unfiltered` ignoram esses parâmetros. Um token abre só o seu recurso (página, `/api/embed/shell`, `/api/embed/data/:request` e os seus datasets em `/api/datasets`); catálogo, outros dashboards, queries, métricas, opções, exports e rotas customizadas devolvem 403. Tokens expirados, adulterados ou de outra audiência devolvem 401. Nunca cria cookies de sessão.
+
+**Página anfitriã.** O iframe envia o token no cabeçalho `X-Dashy-Embed` (os cookies de terceiros são bloqueados) e publica `{ type: "dashy:resize", height }` sempre que a altura muda:
+
+```html
+<iframe src="https://bi.example.com/embed/dashboards/sales?token=…" style="width:100%;border:0"></iframe>
+<script>
+  addEventListener("message", (event) => {
+    if (event.origin !== "https://bi.example.com" || event.data?.type !== "dashy:resize") return;
+    for (const frame of document.querySelectorAll("iframe"))
+      if (frame.contentWindow === event.source) frame.style.height = `${event.data.height}px`;
+  });
+</script>
+```
+
+As páginas incorporadas enviam `frame-ancestors` com `embed.origins` (ou `'none'`), `Referrer-Policy: no-referrer` e não enviam `X-Frame-Options`. O SVG é estático e não incorpora web fonts. O sample Maven ativa a incorporação com uma API key de desenvolvimento; `bun scripts/embed-host.ts --port 3731` serve uma página anfitriã de teste. Ver [incorporação](docs/embedding.md).
 
 ## Validação e deployment
 

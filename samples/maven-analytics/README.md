@@ -81,6 +81,24 @@ all dataset validation and permissions. Handlers and their imports remain on the
 server. Restart development after edits; rebuild the production package to deploy
 handler changes. HEAD and OPTIONS are provided automatically.
 
+## Embedding
+
+The sample enables [embedding](../../docs/embedding.md). It stays public; an API key
+(`MAVEN_API_KEY`, default `maven-sample-api-key`) authenticates the host
+application's server, which mints tokens. `MAVEN_EMBED_SECRET` and
+`MAVEN_SESSION_SECRET` have development defaults that exist only for this offline
+sample. `MAVEN_EMBED_ORIGINS` (default `http://localhost:3731,http://127.0.0.1:3731`)
+lists the origins that may frame the iframes.
+
+```sh
+bun run dashy build --with-sample maven-analytics
+bun run start --with-sample maven-analytics --port 3730
+bun scripts/embed-host.ts --dashy http://127.0.0.1:3730 --port 3731
+# Open http://127.0.0.1:3731: an SVG image, the gallery dashboard and one dataset.
+# Options: --dashboard, --dataset, --params '{"brand":["Contoso"]}', --language, --theme.
+# A host on another port (--port 3732) shows the browser refusing the frames.
+```
+
 ## Data provenance
 
 - Dataset: [Global Electronics Retailer](https://mavenanalytics.io/data-playground/global-electronics-retailer), distributed by Maven Analytics; source credited to Microsoft.

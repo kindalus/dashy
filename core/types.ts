@@ -399,6 +399,14 @@ export interface Principal {
   subject?: string;
   email?: string;
   name?: string;
+  /**
+   * How the request authenticated. `dashy/auth` sets it: `api-key` for a key sent
+   * with the request, `session` for a session cookie or bearer, `oidc` for a session
+   * that started with an OpenID Connect sign-in. The engine sets `embed` for embed
+   * tokens. Only `api-key` principals can mint embed tokens; a project hook that
+   * authenticates server-to-server keys sets it too.
+   */
+  via?: "api-key" | "session" | "oidc" | "embed";
 }
 /**
  * Principal, or a principal with response headers (for example a renewed
@@ -463,6 +471,19 @@ export interface CacheConfig {
   maxBytes?: ByteSize;
 }
 
+/** Signed embed tokens for static SVG charts and interactive iframes. */
+export interface EmbedConfig {
+  /** HS256 signing secret, at least 32 characters. Rotating it revokes every token. */
+  secret: string;
+  /**
+   * Exact origins allowed to frame embed pages, e.g. https://portal.example.com
+   * (http only for localhost). Without it no page can frame them. SVG images do not depend on it.
+   */
+  origins?: readonly string[];
+  /** Longest token lifetime a mint may request, default 86 400 s (one day), at most 30 days. */
+  maxTtlSeconds?: number;
+}
+
 export interface ProjectDefinition {
   name: string;
   theme?: import("./theme").ThemeConfig;
@@ -495,6 +516,8 @@ export interface ProjectDefinition {
   authenticate?: (request: Request) => AuthResult | Promise<AuthResult>;
   /** Handles /auth/* (login, callback, logout) before authentication. Return undefined for 404. */
   authRoutes?: (request: Request) => Response | undefined | Promise<Response | undefined>;
+  /** Enables embedding with signed tokens minted by API-key principals. Absent disables it. */
+  embed?: EmbedConfig;
 }
 export interface QueryResult {
   columns: string[];

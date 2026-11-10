@@ -239,7 +239,64 @@ try {
     assert.equal(required.requests.length, 0);
     const detailPage = await request("/dashboards/product-detail?productName=Contoso%20Wireless%20Laser%20Mouse%20E50%20Grey&_from=%2Fdashboards%2Fproducts");
     assert.equal(detailPage.status, 200);
+    await checkEmbedding(request);
   });
+  /** Maven's embeds: an API key mints; the iframe page and the SVG images render in the packaged server. */
+  async function checkEmbedding(request: (path: string, method?: string, signal?: AbortSignal, body?: unknown, headers?: Record<string, string>) => Promise<Response>) {
+    const key = { "X-API-Key": "maven-sample-api-key" };
+    // The public sample's anonymous visitors cannot mint.
+    assert.equal((await request("/api/embed", "POST", undefined, { dashboard: "gallery" })).status, 403);
+    const minted = await request("/api/embed", "POST", undefined, { dashboard: "gallery", params: { country: "Canada" } }, key);
+    assert.equal(minted.status, 200, await minted.clone().text());
+    const embed = await minted.json();
+    const frame = await request(embed.urls.iframe);
+    assert.equal(frame.status, 200);
+    assert.match(frame.headers.get("content-security-policy") ?? "", /script-src 'self' 'nonce-.*frame-ancestors http:\/\/localhost:3731 http:\/\/127\.0\.0\.1:3731$/);
+    assert.equal(frame.headers.get("x-frame-options"), null);
+    assert.equal(frame.headers.get("referrer-policy"), "no-referrer");
+    assert.equal(frame.headers.get("set-cookie"), null);
+    const html = await frame.text();
+    const bootstrap = JSON.parse(html.match(/<script[^>]*id="dashy-data"[^>]*>(.*?)<\/script>/s)![1]!);
+    assert.deepEqual(bootstrap.embed.fixed, ["country"]);
+    assert.equal(bootstrap.dashboard.params.country, "Canada");
+    // Only this dashboard reaches the browser, never the rest of the workspace.
+    assert.deepEqual(Object.keys(bootstrap.catalog.dashboards), ["gallery"]);
+    assert.deepEqual(bootstrap.catalog.datasets, {});
+    assert.deepEqual(bootstrap.catalog.pages, {});
+    // The grid alone: every block in its loading state, no workspace, filters, toolbars or links into it.
+    assert.ok(html.includes('class="embed"') && html.includes('lang="pt"') && html.includes('data-theme="zafir"'));
+    assert.equal((html.match(/class="block-loading"/g) || []).length, bootstrap.dashboard.definition.blocks.length);
+    for (const absent of ['class="sidebar"', 'class="filters"', 'class="export-menu"', 'class="view-toggle"', 'class="topbar"', 'href="/dashboards', 'href="/pages'])
+      assert.ok(!html.includes(absent), `embed page must not include ${absent}`);
+    for (const asset of [...html.matchAll(/(?:src|href)="(\/assets\/[^"?]+)"/g)]) assert.equal((await request(asset[1]!)).status, 200);
+    // Its data requests carry the token in a header.
+    const data = await request(`/api/embed/data/${bootstrap.dashboard.requests[0].id}`, "GET", undefined, undefined, { "X-Dashy-Embed": embed.token });
+    assert.equal(data.status, 200);
+    assert.equal((await request("/api/catalog", "GET", undefined, undefined, { "X-Dashy-Embed": embed.token })).status, 403);
+    // The token opens its embed page only.
+    assert.equal((await request(`/dashboards/gallery?token=${embed.token}`)).status, 403);
+    assert.equal((await request(`/embed/dashboards/overview?token=${embed.token}`)).status, 403);
+    const invalid = await request("/embed/dashboards/gallery?token=invalid");
+    assert.equal(invalid.status, 401);
+    const invalidHtml = await invalid.text();
+    assert.ok(invalidHtml.includes(messages.pt.embedInvalid) && !invalidHtml.includes("href"));
+    assert.match(invalid.headers.get("content-security-policy") ?? "", /frame-ancestors http:\/\/localhost:3731/);
+    assert.equal(embed.urls.svg.length, bootstrap.dashboard.definition.blocks.length);
+    const image = await request(embed.urls.svg[0]);
+    assert.equal(image.status, 200);
+    assert.equal(image.headers.get("content-type"), "image/svg+xml; charset=utf-8");
+    assert.equal(image.headers.get("content-security-policy"), "default-src 'none'; style-src 'unsafe-inline'");
+    const svg = await image.text();
+    assert.ok(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400"'));
+    assert.ok(svg.includes(">Sales drill-down</text>") && svg.includes("Customer country: Canada"));
+    // A dataset embed in the project theme, in English: the generated token map supplies its colours.
+    const single = await (await request("/api/embed", "POST", undefined, { dataset: "categories", language: "en", theme: "maven" }, key)).json();
+    const page = await (await request(single.urls.iframe)).text();
+    assert.ok(page.includes('lang="en"') && page.includes('data-theme="power-bi maven"'));
+    const themed = await (await request(`${single.urls.svg[0]}&_width=640&_height=360`)).text();
+    assert.ok(themed.startsWith('<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"'));
+    assert.ok(themed.includes("#118dff"), "Maven extends Power BI's chart palette");
+  }
   if (!mavenOnly) {
     // Custom components must be compiled for the chosen implementation.
     const uncompiled = Bun.spawn([process.execPath, cli, "start", "--with-sample", "maven-analytics"],
@@ -402,7 +459,7 @@ try {
     );
   }
   console.log(mavenOnly
-    ? "Maven production passed: custom pages, initial CSS, datasets, filters, empty results and dashboards in an isolated deployment."
+    ? "Maven production passed: custom pages, initial CSS, datasets, filters, empty results, dashboards and embeds (mint, iframe page, SVG) in an isolated deployment."
     : "Production passed: empty default, runtime discovery, uncompiled-page guard, six adapters, SSR, assets, filters, locale/theme overrides, HTTP cancellation and missing-sample errors in an isolated deployment.");
 } finally {
   await rm(directory, { recursive: true, force: true });

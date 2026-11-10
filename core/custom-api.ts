@@ -5,7 +5,8 @@ import type { Principal } from "./types";
 const defaultBodyLimit = 1024 * 1024;
 const unsafeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
-async function boundedRequest(request: Request, limit: number): Promise<Request> {
+/** The request with its whole body read, refusing bodies over `limit` bytes (413). */
+export async function boundedRequest(request: Request, limit: number): Promise<Request> {
   if (Number(request.headers.get("content-length")) > limit)
     throw new DashyError("Request body too large", 413);
   if (!request.body) return request;
@@ -32,6 +33,26 @@ async function boundedRequest(request: Request, limit: number): Promise<Request>
   let offset = 0;
   for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
   return new Request(request.url, { method: request.method, headers: request.headers, body, signal: request.signal });
+}
+
+/**
+ * Write requests carry `X-Dashy-Request: 1`, and browsers must send them from the
+ * same origin: a cross-site form cannot set the header, and scripts on other sites
+ * are refused by Origin and Sec-Fetch-Site. Server-to-server callers send neither.
+ */
+export function assertWriteRequest(request: Request) {
+  const origin = request.headers.get("origin");
+  const site = request.headers.get("sec-fetch-site");
+  if (request.headers.get("x-dashy-request") !== "1" || (origin !== null && origin !== new URL(request.url).origin)
+    || (site !== null && site !== "same-origin" && site !== "none"))
+    throw new DashyError("Write requests require X-Dashy-Request: 1 and a same-origin browser request", 403);
+}
+/** Parses a bounded JSON body as unknown; 415 without a JSON content type, 400 when malformed. */
+export async function readJsonBody(request: Request): Promise<unknown> {
+  if (!/^application\/(?:[a-z0-9!#$&^_.+-]+\+)?json(?:\s*;|$)/i.test(request.headers.get("content-type") ?? ""))
+    throw new DashyError("Expected application/json", 415);
+  try { return await request.json(); }
+  catch { throw new DashyError("Invalid JSON body"); }
 }
 
 /** Compile once; more specific static segments take precedence, left to right. */
@@ -76,13 +97,7 @@ export function createCustomApiHandler(engine: DashyEngine) {
       return Response.json({ error: "Method not allowed" }, { status: 405, headers: { Allow: allow } });
     }
     if (!canRead(selected.route.roles, principal)) throw new DashyError("Access denied", 403);
-    if (unsafeMethods.has(request.method)) {
-      const origin = request.headers.get("origin");
-      const site = request.headers.get("sec-fetch-site");
-      if (request.headers.get("x-dashy-request") !== "1" || (origin !== null && origin !== url.origin)
-        || (site !== null && site !== "same-origin" && site !== "none"))
-        throw new DashyError("Write requests require X-Dashy-Request: 1 and a same-origin browser request", 403);
-    }
+    if (unsafeMethods.has(request.method)) assertWriteRequest(request);
     const route = selected.route;
     const raw = route.params === undefined ? {} : readParams(url.searchParams, engine.project.params);
     const params = parseParams(engine.project.params, route.params ?? [], raw);
@@ -95,12 +110,7 @@ export function createCustomApiHandler(engine: DashyEngine) {
     const response = await route.handler({
       request: bounded, pathParams, query: url.searchParams, params, principal, signal: request.signal,
       readJson() {
-        return json ??= (async () => {
-          if (!/^application\/(?:[a-z0-9!#$&^_.+-]+\+)?json(?:\s*;|$)/i.test(bounded.headers.get("content-type") ?? ""))
-            throw new DashyError("Expected application/json", 415);
-          try { return await bounded.json(); }
-          catch { throw new DashyError("Invalid JSON body"); }
-        })();
+        return json ??= readJsonBody(bounded);
       },
       data: {
         dataset: (name, values = {}) => engine.dataset(name, values, principal, undefined, request.signal),

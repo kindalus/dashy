@@ -9,7 +9,7 @@ import { todayIn } from "./dates";
 import { poolFor, type DatabasePool } from "./pool";
 import { cacheKey, QueryCache } from "./cache";
 import { numericValue } from "./tables";
-import { drillInputs, levelDefinition, validDrilldowns } from "./drilldown";
+import { drillInputs, drilldownQueries, drilldownSetParams, levelDefinition, validDrilldowns } from "./drilldown";
 import type {
   BlockResult,
   Catalog,
@@ -58,6 +58,37 @@ export interface DashboardOptions extends ExecutionOptions {
   crossFilters?: readonly CrossFilterOrigin[];
   /** Drill-down path per block, from repeated _dd=block:value keys. */
   drilldowns?: Record<string, readonly string[]>;
+  /**
+   * Values no request can change (an embed token's parameters). They override
+   * request values, cross-filters on them are ignored, and every block query and
+   * drill-down level receives them; a date drill-down can only narrow a fixed range.
+   */
+  fixed?: Params;
+}
+/** What an embed token shows: one dashboard, or one dataset as a single block. */
+export interface EmbedResource {
+  kind: "dashboard" | "dataset";
+  name: string;
+}
+const isRange = (value: unknown): value is { from: string | number; until: string | number } =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+const before = (a: string | number, b: string | number) =>
+  typeof a === "number" && typeof b === "number" ? a < b : String(a) < String(b);
+/**
+ * Applies fixed values to one query's inputs. A range computed by a date drill-down
+ * stays when it lies inside the fixed range; it is intersected otherwise.
+ */
+function pin(inputs: Record<string, unknown>, fixed: Params | undefined, accepted: readonly string[], definitions: ProjectDefinition["params"]) {
+  for (const [name, value] of Object.entries(fixed ?? {})) {
+    if (!accepted.includes(name)) continue;
+    const current = inputs[name];
+    if (isRange(value) && isRange(current)) {
+      const from = before(current.from, value.from) ? value.from : current.from;
+      const until = before(value.until, current.until) ? value.until : current.until;
+      if (before(until, from)) throw new DashyError(`Outside the ${definitions[name]?.label ?? name} filter`);
+      inputs[name] = { from, until };
+    } else inputs[name] = value;
+  }
 }
 export interface ParamOptionsRequest {
   /** Case-insensitive search on label and value. */
@@ -390,6 +421,37 @@ export class DashyEngine {
         throw new Error(`Dataset ${name} has no column ${column.key}`);
     return result;
   }
+  /**
+   * A charted dataset as its block first shows it: the top drill-down level with its
+   * `set` values, fixed values applied last. Returns the resolved parameters for a
+   * caption, without the drill-down's own. 400 when the dataset has no chart.
+   */
+  async chartData(
+    name: string,
+    raw: Record<string, unknown> = {},
+    principal?: Principal,
+    signal?: AbortSignal,
+    options: ExecutionOptions & { fixed?: Params } = {},
+  ): Promise<{ definition: DatasetDefinition; result: QueryResult; params: Params; filters: string[] }> {
+    const dataset = this.datasetDefinition(name);
+    requireRead(dataset.roles, principal);
+    const definition = levelDefinition(dataset, 0);
+    const query = this.definitionOf(definition.query);
+    requireRead(query.roles, principal);
+    if (!definition.chart) throw new DashyError(`Dataset ${name} has no chart`);
+    const accepted = query.params ?? [];
+    const inputs: Record<string, unknown> = { ...raw, ...selectParams(dataset.drilldown?.[0]?.set ?? {}, accepted) };
+    pin(inputs, options.fixed, accepted, this.project.params);
+    const result = await this.query(definition.query, inputs, principal, signal, options);
+    for (const column of definition.columns)
+      if (!result.columns.includes(column.key)) throw new Error(`Dataset ${name} has no column ${column.key}`);
+    const set = drilldownSetParams(dataset);
+    return {
+      definition, result,
+      params: parseParams(this.project.params, accepted, inputs, {}, this.today()),
+      filters: accepted.filter((param) => !set.includes(param)),
+    };
+  }
   private blockQuery(block: DashboardBlock, drilldowns: Record<string, readonly string[]> = {}): string {
     if (block.type === "metric") return this.project.metrics[block.metric]!.query;
     const dataset = this.project.datasets[block.dataset]!;
@@ -412,20 +474,94 @@ export class DashyEngine {
       return annotated;
     });
   }
+  private dashboardDefinition(name: string): DashboardDefinition {
+    const definition = this.project.dashboards[name];
+    if (!definition || !Object.hasOwn(this.project.dashboards, name))
+      throw new DashyError("Dashboard not found", 404);
+    return definition;
+  }
+  private datasetDefinition(name: string): DatasetDefinition {
+    const definition = this.project.datasets[name];
+    if (!definition || !Object.hasOwn(this.project.datasets, name))
+      throw new DashyError("Dataset not found", 404);
+    return definition;
+  }
+  /** Parameters a dataset accepts on its own: its top level's query, without drill-down `set` values. */
+  datasetParams(name: string): string[] {
+    const dataset = this.datasetDefinition(name);
+    const set = drilldownSetParams(dataset);
+    return (this.definitionOf(levelDefinition(dataset, 0).query).params ?? []).filter((param) => !set.includes(param));
+  }
+  /**
+   * A dashboard with one full-width block showing a dataset, so an embed of a
+   * single dataset loads, drills and refreshes exactly like a dashboard block.
+   * Its parameters are the dataset's, starting at their defaults.
+   */
+  datasetDashboard(name: string): DashboardDefinition {
+    const dataset = this.datasetDefinition(name);
+    return {
+      label: dataset.label,
+      ...(dataset.description ? { description: dataset.description } : {}),
+      params: this.datasetParams(name),
+      blocks: [{ id: name, type: "dataset", dataset: name, width: 12 }],
+    };
+  }
+  private embedDefinition(resource: EmbedResource): DashboardDefinition {
+    return resource.kind === "dashboard" ? this.dashboardDefinition(resource.name) : this.datasetDashboard(resource.name);
+  }
+  /**
+   * Whether a principal can read everything an embed shows: the dashboard and every
+   * block's metric or dataset and queries (drill-down levels included), or the dataset
+   * and its queries. Throws 404 for unknown resources and 403 otherwise.
+   */
+  assertEmbedReadable(resource: EmbedResource, principal?: Principal) {
+    const datasetReadable = (name: string) => {
+      const dataset = this.datasetDefinition(name);
+      requireRead(dataset.roles, principal);
+      for (const query of drilldownQueries(dataset)) requireRead(this.definitionOf(query).roles, principal);
+    };
+    if (resource.kind === "dataset") return datasetReadable(resource.name);
+    const definition = this.dashboardDefinition(resource.name);
+    requireRead(definition.roles, principal);
+    for (const block of definition.blocks) {
+      if (block.type === "dataset") datasetReadable(block.dataset);
+      else {
+        const metric = this.project.metrics[block.metric]!;
+        requireRead(metric.roles, principal);
+        requireRead(this.definitionOf(metric.query).roles, principal);
+      }
+    }
+  }
   dashboardShell(
     name: string,
     raw: Record<string, unknown> = {},
     principal?: Principal,
     options: DashboardOptions = {},
   ): DashboardShell {
-    const definition = this.project.dashboards[name];
-    if (!definition || !Object.hasOwn(this.project.dashboards, name))
-      throw new DashyError("Dashboard not found", 404);
+    return this.shellFor(name, this.dashboardDefinition(name), raw, principal, options);
+  }
+  /** The shell of an embed: its dashboard, or its dataset as a one-block dashboard without cross-filters. */
+  embedShell(
+    resource: EmbedResource,
+    raw: Record<string, unknown> = {},
+    principal?: Principal,
+    options: DashboardOptions = {},
+  ): DashboardShell {
+    return this.shellFor(resource.name, this.embedDefinition(resource), raw, principal,
+      resource.kind === "dataset" ? { ...options, crossFilters: [] } : options);
+  }
+  private shellFor(
+    name: string,
+    definition: DashboardDefinition,
+    raw: Record<string, unknown>,
+    principal: Principal | undefined,
+    options: DashboardOptions,
+  ): DashboardShell {
     requireRead(definition.roles, principal);
     const params = parseParams(
       this.project.params,
       definition.params || [],
-      raw,
+      { ...raw, ...selectParams(options.fixed ?? {}, definition.params ?? []) },
       definition.defaults,
       this.today(),
     );
@@ -444,7 +580,8 @@ export class DashyEngine {
       }),
     );
     const missing = (definition.required ?? []).filter((param) => !Object.hasOwn(params, param));
-    const crossFilters = this.validCrossFilters(definition, params, options.crossFilters ?? []);
+    const crossFilters = this.validCrossFilters(definition, params, options.crossFilters ?? [])
+      .filter((origin) => !Object.hasOwn(options.fixed ?? {}, origin.param));
     const drilldowns = validDrilldowns(definition, this.project.datasets, options.drilldowns ?? {});
     const groups = new Map<string, DashboardRequest>();
     if (!missing.length)
@@ -471,7 +608,26 @@ export class DashyEngine {
     signal?: AbortSignal,
     options: DashboardOptions = {},
   ): Promise<DashboardData> {
-    const shell = this.dashboardShell(name, raw, principal, options);
+    return this.requestData(this.dashboardShell(name, raw, principal, options), requestId, principal, signal, options);
+  }
+  /** One request group of an embed, like `dashboardData`. */
+  async embedData(
+    resource: EmbedResource,
+    requestId: string,
+    raw: Record<string, unknown> = {},
+    principal?: Principal,
+    signal?: AbortSignal,
+    options: DashboardOptions = {},
+  ): Promise<DashboardData> {
+    return this.requestData(this.embedShell(resource, raw, principal, options), requestId, principal, signal, options);
+  }
+  private requestData(
+    shell: DashboardShell,
+    requestId: string,
+    principal: Principal | undefined,
+    signal: AbortSignal | undefined,
+    options: DashboardOptions,
+  ): Promise<DashboardData> {
     if (shell.missing.length)
       throw new DashyError(`${this.project.params[shell.missing[0]!]!.label} is required`);
     const request = shell.requests.find((group) => group.id === requestId);
@@ -537,7 +693,7 @@ export class DashyEngine {
     selected: readonly DashboardBlock[],
     principal?: Principal,
     signal?: AbortSignal,
-    options: ExecutionOptions = {},
+    options: DashboardOptions = {},
     /** Throw block errors (with their status) instead of returning error blocks. */
     rethrow = false,
   ): Promise<DashboardData> {
@@ -563,6 +719,8 @@ export class DashyEngine {
           // Drill-down values narrow this block only; validation guarantees the level accepts them.
           for (const [name, value] of Object.entries(drill))
             if (accepted.includes(name)) inputs[name] = value;
+          // Fixed values win over cross-filter exclusions and drill-down values alike.
+          pin(inputs, options.fixed, accepted, this.project.params);
           results.set(
             key,
             this.executeQuery(session, queryName, inputs, principal, options, signal),

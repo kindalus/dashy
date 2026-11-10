@@ -86,7 +86,7 @@ The page menu on phones stays native, where the system picker is easier to use.
 
 ### Reserved query keys
 
-`api_key`, `refresh`, `_from`, `_xf`, `_dd`, `_format`, `_sort` and `_top` belong to the engine and are never validated as parameters; they cannot be used as parameter names. `refresh=true` bypasses the result cache, `_from` holds the drillthrough origin, `_xf` the cross-filter origins and `_dd` the [drill-down](#drill-down) paths; the last three select an [export](#export).
+`api_key`, `token`, `refresh`, `_from`, `_xf`, `_dd`, `_format`, `_sort`, `_top`, `_width`, `_height`, `_theme` and `_lang` belong to the engine and are never validated as parameters; they cannot be used as parameter names. `refresh=true` bypasses the result cache, `_from` holds the drillthrough origin, `_xf` the cross-filter origins and `_dd` the [drill-down](#drill-down) paths; `_format`, `_sort` and `_top` select an [export](#export). `token` carries an [embed token](embedding.md); `_format=svg`, `_width`, `_height`, `_theme` and `_lang` draw a dataset's chart as an [SVG image](#embedding).
 
 ```ts
 // HTTP: ?period.from=2026-01-01&period.until=2026-06-30&region=North
@@ -499,6 +499,34 @@ Files are named `<dashboard>-<block>-<YYYY-MM-DD>.<csv|xlsx>`. A result that rea
 In chart view, the Download menu also saves the chart as PNG (at twice its size) or SVG, generated in the browser from the chart's final frame, even mid-animation. The image carries the block's title and a caption, wrapped to the image width, with the filters that narrow the block (filters set to All, the block's own cross-filters and its `unfiltered` parameters are left out), so it stands on its own; files are named `<dashboard>-<block>.<png|svg>`. If the browser cannot produce the image, the block says so. Table view offers only the data formats.
 
 **Print / PDF**, next to Refresh, opens the browser's print dialog, where "Save as PDF" makes a PDF. The printed page shows the title, a line with every filter value (noting the block a cross-filter does not apply to), the metric cards and the blocks, without navigation, filter controls or menus. Tables print every row rather than one page, up to 2,000 rows with a note pointing to the CSV and Excel downloads for more; they repeat their header on each page and show the total once at the end. Charts and cards are not split across pages; charts are redrawn without animation and scale to the paper width. Dark themes print with a light palette, charts included. The layout follows the browser's paper size and margins. There is no server-side PDF.
+
+## Embedding
+
+Charts and dashboards appear in other applications with signed tokens: a static SVG
+of one dataset chart, and an interactive iframe of a dashboard or one dataset (mouse
+only: tooltips, cross-filter and drill-down). See [embedding](embedding.md).
+
+```ts
+embed: { secret: process.env.DASHY_EMBED_SECRET!, origins: ["https://portal.example.com"], maxTtlSeconds: 3600 }
+```
+
+```text
+POST /api/embed                         mint (API-key principals only; X-Dashy-Request: 1)
+     { dashboard | dataset, params?, ttlSeconds?, language?, theme? }
+  → { token, expiresAt, urls: { iframe, svg[] } }
+GET  /embed/dashboards/:name?token=…    iframe page of a dashboard
+GET  /embed/datasets/:name?token=…      iframe page of one dataset
+GET  /api/embed/shell                   iframe shell and data, token in X-Dashy-Embed
+GET  /api/embed/data/:request
+GET  /api/datasets/:name?_format=svg    &_width= &_height= &_theme= &_lang= &token=
+```
+
+Tokens are HS256 JWTs with audience `dashy-embed`, naming one resource, its fixed
+parameters, the minting key's roles, subject, language and theme. Fixed parameters
+override request values, cross-filters and drill-down. A token opens only its
+resource (403 elsewhere); expired, tampered or other-audience tokens return 401.
+`/api/datasets/:name` accepts `_format=json` (the default) or `svg`; SVG works with
+normal authentication too, and returns 400 for datasets without a chart.
 
 ## Limits and cache
 

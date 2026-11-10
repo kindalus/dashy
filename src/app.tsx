@@ -59,8 +59,21 @@ export interface AppProps {
   theme?: ThemeName;
   /** The interface language rendered for this viewer: the project's or their saved choice. */
   language?: Language;
+  /** An embed page: only the blocks, in the token's theme and language. */
+  embed?: EmbedView;
 }
+/** What an embed page needs in the browser. */
+export interface EmbedView {
+  kind: "dashboard" | "dataset";
+  name: string;
+  /** Sent as X-Dashy-Embed on data requests: third-party frames often get no cookies. */
+  token: string;
+  /** Parameters the token fixes; clicks never offer to change them. */
+  fixed: string[];
+}
+export const embedHeader = "X-Dashy-Embed";
 export function App(props: AppProps & { Page?: Component<PageProps> }) {
+  if (untrack(() => props.embed)) return <EmbedApp {...props} />;
   const selected = props.page ? `/pages/${props.page.id}` : props.dashboard ? `/dashboards/${props.dashboard.id}` : undefined;
   const [theme, setTheme] = createSignal<ThemeName>(untrack(() => props.theme ?? props.catalog.theme.name));
   const changeTheme = (name: ThemeName) => setTheme(applyTheme(props.catalog.theme, name));
@@ -82,6 +95,38 @@ export function App(props: AppProps & { Page?: Component<PageProps> }) {
           ? <PageContent page={props.page} catalog={props.catalog} component={props.Page} />
           : <DashboardContent {...props} onStatus={setStatus} />}
       </Workspace>
+    </LocaleContext>
+  </ThemeContext>;
+}
+
+/**
+ * An embedded dashboard or dataset: the grid alone, without the workspace, filters,
+ * toolbars or drillthrough. It reports its height to the host page as it changes.
+ */
+function EmbedApp(props: AppProps) {
+  const language = untrack(() => props.language ?? props.catalog.language?.name ?? languageOf(props.catalog.locale));
+  const theme = untrack(() => props.theme ?? props.catalog.theme.name);
+  const locale = () => formattingLocale(props.catalog.locale, language);
+  let element!: HTMLElement;
+  onSettled(() => {
+    let last = -1;
+    const report = () => {
+      const height = Math.ceil(element.getBoundingClientRect().height);
+      if (height === last) return;
+      last = height;
+      // Any host may size the frame; the message carries nothing but the height.
+      window.parent.postMessage({ type: "dashy:resize", height }, "*");
+    };
+    const observer = new ResizeObserver(report);
+    observer.observe(element);
+    report();
+    return () => observer.disconnect();
+  });
+  return <ThemeContext value={() => theme}>
+    <LocaleContext value={locale}>
+      <main class="embed" ref={element}>
+        <DashboardContent {...props} />
+      </main>
     </LocaleContext>
   </ThemeContext>;
 }
@@ -109,14 +154,22 @@ export interface BlockInteraction {
   caption: () => string;
   /** File name stem for images: dashboard and block. */
   filename: () => string;
+  /** Whether the block shows its toolbar (download, Top N, chart or table); embeds do not. */
+  tools: boolean;
 }
 
 function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) => void }) {
   const [shell, setShell] = createSignal(untrack(() => props.dashboard));
   const locale = useLocale();
   const t = useText();
-  let loader = untrack(() => props.dashboard)
-    ? new DashboardLoader(untrack(() => props.dashboard)!, (state) => setLoads(state), fetch, untrack(t).unableToLoadData) : undefined;
+  const embed = untrack(() => props.embed);
+  // Embeds load through /api/embed with their token in a header, never with cookies.
+  const embedInit: RequestInit | undefined = embed
+    ? { headers: { [embedHeader]: embed.token }, credentials: "omit" } : undefined;
+  const endpoint = embed ? { path: (id: string) => `/api/embed/data/${encodeURIComponent(id)}`, init: embedInit } : {};
+  const newLoader = (next: DashboardShell) =>
+    new DashboardLoader(next, (state) => setLoads(state), fetch, untrack(t).unableToLoadData, endpoint);
+  let loader = untrack(() => props.dashboard) ? newLoader(untrack(() => props.dashboard)!) : undefined;
   const [loads, setLoads] = createSignal<DashboardLoads>(loader?.state || {});
   const [draft, setDraft] = createSignal<Params>(untrack(() => ({ ...props.dashboard?.params })));
   const [menu, setMenu] = createSignal<MenuState>();
@@ -188,18 +241,21 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
     const current = shell();
     if (!current) return;
     const query = search(current, params, crossFilters, drilldowns ?? current.drilldowns);
-    history.replaceState(null, "", `${location.pathname}${query.size ? `?${query}` : ""}`);
+    // An embed keeps its address (and token): the host page owns its state.
+    if (!embed) history.replaceState(null, "", `${location.pathname}${query.size ? `?${query}` : ""}`);
     setMenu(undefined);
     const run = ++generation;
     try {
       // Request groups depend on cross-filters and required filters, so ask the server.
-      const response = await fetch(`/api/dashboard-shell/${encodeURIComponent(current.id)}?${query}`, { credentials: "same-origin" });
+      const response = embed
+        ? await fetch(`/api/embed/shell?${query}`, embedInit)
+        : await fetch(`/api/dashboard-shell/${encodeURIComponent(current.id)}?${query}`, { credentials: "same-origin" });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || t().unableToApplyFilters);
       if (run !== generation) return;
       const next = body as DashboardShell;
       loader?.dispose();
-      loader = new DashboardLoader(next, (state) => setLoads(state), fetch, t().unableToLoadData);
+      loader = newLoader(next);
       setShell(next);
       setDraft({ ...next.params });
       setLoads(loader.state);
@@ -214,13 +270,15 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
     }
   }
   onSettled(() => {
-    installPrint();
-    fromParam = new URLSearchParams(location.search).get("_from");
-    setFrom(fromParam);
+    if (!embed) {
+      installPrint();
+      fromParam = new URLSearchParams(location.search).get("_from");
+      setFrom(fromParam);
+    }
     const current = shell();
     if (current && !current.missing.length) {
       const query = search(current, current.params, current.crossFilters);
-      history.replaceState(null, "", `${location.pathname}${query.size ? `?${query}` : ""}`);
+      if (!embed) history.replaceState(null, "", `${location.pathname}${query.size ? `?${query}` : ""}`);
       loadStarted = performance.now();
       void loader!.load(query);
     }
@@ -252,7 +310,15 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
     void apply(next.params, next.crossFilters);
   };
   const depthOf = (blockId: string) => shell()?.drilldowns[blockId]?.length ?? 0;
+  /**
+   * Embeds cross-filter only a dashboard's parameters the token leaves free, and never
+   * open other dashboards; a single dataset only drills down.
+   */
+  const crossFilters = (ctx: ActionContext, param: string) =>
+    Boolean(ctx.dashboard.params?.includes(param)) && (!embed || (embed.kind === "dashboard" && !embed.fixed.includes(param)));
+  const allowed = (action: ClickAction) => !embed || action.kind === "drill" || (action.kind !== "open" && crossFilters(context()!, action.param));
   const interaction = (blockId: string): BlockInteraction => ({
+    tools: !embed,
     columns: (dataset) => {
       const ctx = context();
       if (!ctx) return [];
@@ -260,7 +326,7 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
       return dataset.columns.filter((column) => {
         if (column.key === drilling) return true;
         const target = columnTarget(column);
-        return target && (ctx.dashboard.params?.includes(target.name) || drillthroughTargets(ctx, target.name).length > 0);
+        return target && (crossFilters(ctx, target.name) || (!embed && drillthroughTargets(ctx, target.name).length > 0));
       });
     },
     select: (dataset, column, row, event, chart = false) => {
@@ -274,7 +340,7 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
         ? drillAction(dataset, depth, row, (value) => formatValue(value, formatOf(drilling!), locale())) : undefined;
       const shown = column ?? dataset.columns.find((c) => c.key === drilling);
       const display = shown ? formatValue(row[shown.key] ?? null, shown.format, locale()) : "";
-      const actions = [...(drill ? [drill] : []), ...(column ? actionsFor(ctx, blockId, column, row, display) : [])];
+      const actions = [...(drill ? [drill] : []), ...(column ? actionsFor(ctx, blockId, column, row, display) : [])].filter(allowed);
       if (!actions.length) return;
       if (actions.length === 1) return run(blockId, actions[0]!);
       const target = event?.target instanceof Element ? event.target.getBoundingClientRect() : undefined;
@@ -350,6 +416,38 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
       notes[origin.param] = t().notAppliedTo(current.labels[origin.block] ?? origin.block);
     return describeFilters(current.definition.params ?? [], current.params, props.catalog.params, notes, t());
   };
+  const grid = () => (
+    <section
+      class="dashboard-grid"
+      aria-label={t().dashboardResults}
+    >
+      <For each={definition()?.blocks || []} keyed={(block) => block.id}>
+        {(layout) => (
+          <DashboardCard
+            block={blocks().get(layout().id)}
+            layout={layout()}
+            cellRef={cellRef(layout().id)}
+            label={shell()!.labels[layout().id]!}
+            loading={stateFor(layout().id)?.loading ?? false}
+            loadError={stateFor(layout().id)?.error || ""}
+            retry={() => void loader?.retry(groupIds().get(layout().id)!)}
+            locale={locale()}
+            unfiltered={(definition()?.unfiltered?.[layout().id] ?? []).map((name) => props.catalog.params[name]?.label ?? name)}
+            interaction={interaction(layout().id)}
+          />
+        )}
+      </For>
+    </section>
+  );
+  const actionMenu = () => (
+    <Show when={menu()}>
+      {(state) => <ActionMenu state={state()} close={() => setMenu(undefined)} run={(action) => run(state().blockId, action)} />}
+    </Show>
+  );
+  if (embed) return <>
+    <Show when={shell() && !shell()!.missing.length}>{grid()}</Show>
+    {actionMenu()}
+  </>;
   return (
     <>
           {/* Excel's formula bar: the applied filters as one expression. Decorative; other themes hide it. */}
@@ -440,32 +538,10 @@ function DashboardContent(props: AppProps & { onStatus?: (status: PageStatus) =>
             </div>
           </Show>
           <Show when={shell() && !shell()!.missing.length}>
-            <section
-              class="dashboard-grid"
-              aria-label={t().dashboardResults}
-            >
-              <For each={definition()?.blocks || []} keyed={(block) => block.id}>
-                {(layout) => (
-                  <DashboardCard
-                    block={blocks().get(layout().id)}
-                    layout={layout()}
-                    cellRef={cellRef(layout().id)}
-                    label={shell()!.labels[layout().id]!}
-                    loading={stateFor(layout().id)?.loading ?? false}
-                    loadError={stateFor(layout().id)?.error || ""}
-                    retry={() => void loader?.retry(groupIds().get(layout().id)!)}
-                    locale={locale()}
-                    unfiltered={(definition()?.unfiltered?.[layout().id] ?? []).map((name) => props.catalog.params[name]?.label ?? name)}
-                    interaction={interaction(layout().id)}
-                  />
-                )}
-              </For>
-            </section>
+            {grid()}
           </Show>
           </div>
-          <Show when={menu()}>
-            {(state) => <ActionMenu state={state()} close={() => setMenu(undefined)} run={(action) => run(state().blockId, action)} />}
-          </Show>
+          {actionMenu()}
     </>
   );
 }
@@ -832,6 +908,7 @@ function Dataset(props: {
               go={props.interaction.drillTo} />
           </Show>
         </div>
+        <Show when={props.interaction.tools}>
         <div class="block-tools">
         <Show when={imageError()}>
           <p class="image-error" role="alert">{imageError()}</p>
@@ -871,6 +948,7 @@ function Dataset(props: {
           </div>
         </Show>
         </div>
+        </Show>
       </div>
       <Show
         when={props.result.rows.length}

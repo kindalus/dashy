@@ -214,6 +214,13 @@ p {
   display: flex;
   flex-direction: column;
 }
+/* Embeds: the grid alone, inside a frame the host page sizes. */
+main.embed {
+  --pad-x: 16px;
+  --pad-y: 16px;
+  --pad-bottom: 16px;
+  max-width: none;
+}
 .main-column > main {
   flex: 1 0 auto;
   width: 100%;

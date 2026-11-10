@@ -1,5 +1,14 @@
 # Migration notes
 
+## Embedding
+
+[Embedding](embedding.md) adds reserved query keys: `token`, `_width`, `_height`,
+`_theme` and `_lang`. A project parameter named `token` must be renamed; startup
+fails with `parameter name 'token' is reserved`. `/api/datasets/:name` now rejects
+`_format` values other than `json` and `svg` (it ignored them before). Principals
+from `dashy/auth` carry `via` (`api-key`, `session` or `oidc`); hooks that return
+principals need no change unless they should mint embed tokens.
+
 ## Interface language
 
 Dashy's interface now follows a language, English or Portuguese. Without `language`

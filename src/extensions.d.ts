@@ -8,3 +8,9 @@ declare module "virtual:dashy-pages" {
 
 /** The project's theme stylesheets; importing it bundles them. */
 declare module "virtual:dashy-themes" {}
+
+/** Every theme's resolved CSS tokens, for server-side SVG charts. Server-only. */
+declare module "virtual:dashy-theme-tokens" {
+  const tokens: import("../core/theme-tokens").ThemeTokenMap;
+  export default tokens;
+}

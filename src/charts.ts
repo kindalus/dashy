@@ -8,7 +8,7 @@ import {
 } from "echarts/components";
 import { SVGRenderer } from "echarts/renderers";
 import type { DatasetDefinition, QueryResult, Row } from "../core/types";
-import { buildChart, type ChartModule, type ChartTheme, type Selection } from "./chart-options";
+import { buildChart, chartThemeFromTokens, type ChartModule, type ChartTheme, type Selection } from "./chart-options";
 
 use([AriaComponent, GridComponent, LegendComponent, TooltipComponent, SVGRenderer]);
 
@@ -44,26 +44,7 @@ function ensure(modules: ChartModule[]): Promise<void> {
 /** Read resolved CSS values so charts use the selected UI theme. */
 function readChartTheme(element: HTMLElement): ChartTheme {
   const style = getComputedStyle(element);
-  const token = (name: string) => style.getPropertyValue(name).trim();
-  return {
-    palette: Array.from({ length: 6 }, (_, index) => token(`--chart-${index + 1}`)),
-    text: token("--text"),
-    muted: token("--muted"),
-    border: token("--line"),
-    grid: token("--chart-grid"),
-    surface: token("--surface"),
-    // ECharts writes the font unescaped into SVG attributes, so double quotes would
-    // break exported SVG; CSS accepts single quotes equally.
-    font: style.fontFamily.replaceAll('"', "'"),
-    danger: token("--danger"),
-    warning: token("--warning"),
-    success: token("--success"),
-    gridStyle: token("--chart-grid-style") === "dashed" ? "dashed" : "solid",
-    barRadius: Number.parseFloat(token("--chart-bar-radius")) || 0,
-    focus: token("--chart-focus") === "on",
-    chartMuted: token("--chart-muted") || undefined,
-    barStyle: token("--chart-bar-style") === "blocks" ? "blocks" : "solid",
-  };
+  return chartThemeFromTokens((name) => style.getPropertyValue(name).trim(), style.fontFamily);
 }
 
 /**

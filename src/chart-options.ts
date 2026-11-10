@@ -27,6 +27,31 @@ export interface ChartTheme {
   /** "blocks" draws bars as rows of blocks, like a terminal. */
   barStyle?: "solid" | "blocks";
 }
+/**
+ * A chart theme from a UI theme's CSS tokens. The browser reads them from computed
+ * styles; the server from the token map generated at build time.
+ */
+export function chartThemeFromTokens(token: (name: string) => string, font: string): ChartTheme {
+  return {
+    palette: Array.from({ length: 6 }, (_, index) => token(`--chart-${index + 1}`)),
+    text: token("--text"),
+    muted: token("--muted"),
+    border: token("--line"),
+    grid: token("--chart-grid"),
+    surface: token("--surface"),
+    // ECharts writes the font unescaped into SVG attributes, so double quotes would
+    // break exported SVG; CSS accepts single quotes equally.
+    font: font.replaceAll('"', "'"),
+    danger: token("--danger"),
+    warning: token("--warning"),
+    success: token("--success"),
+    gridStyle: token("--chart-grid-style") === "dashed" ? "dashed" : "solid",
+    barRadius: Number.parseFloat(token("--chart-bar-radius")) || 0,
+    focus: token("--chart-focus") === "on",
+    chartMuted: token("--chart-muted") || undefined,
+    barStyle: token("--chart-bar-style") === "blocks" ? "blocks" : "solid",
+  };
+}
 /** The subset of an ECharts click event used to recover the clicked row. */
 export interface ChartEvent {
   seriesIndex?: number;

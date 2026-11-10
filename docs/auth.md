@@ -76,15 +76,31 @@ a6f4…,finance
 - **Pages:** on a page request, `?api_key=` is exchanged for a session cookie and the browser is redirected to the same URL without the key, which keeps it out of history and shared links. Data requests remain stateless.
 - **Invalid keys:** receive `401`.
 
+## Principals
+
+A principal is `{ roles, subject?, email?, name?, via? }`. `via` says how the request
+authenticated. `dashy/auth` sets it:
+
+| `via` | Set for |
+| --- | --- |
+| `api-key` | A key sent with the request (`X-API-Key`, `Authorization: Bearer <key>`, or `?api_key=` on a data request). |
+| `session` | A session cookie or bearer, including one that began with `?api_key=` on a page. |
+| `oidc` | A session that began with an OpenID Connect sign-in. |
+
+The engine sets `embed` for requests carrying an [embed token](embedding.md). Only
+`api-key` principals can mint embed tokens, so browser sessions never can. A project
+with its own hook that authenticates server-to-server keys returns
+`{ roles, via: "api-key" }` for them; without `via`, a principal cannot mint.
+
 ## Development
 
-`createAuth({ disabled: true, session: { secret: "" } })` grants every request the reserved `*` role, which satisfies every role check. Use it only locally.
+`createAuth({ disabled: true, session: { secret: "" } })` grants every request the reserved `*` role, which satisfies every role check, without `via` (it cannot mint embed tokens). Use it only locally.
 
 ## Writing your own hook
 
 `authenticate(request)` may return:
 
-- `{ roles }`: a principal;
+- `{ roles }`: a principal, optionally with `via` (see [principals](#principals));
 - `{ principal, headers }`: a principal plus headers to append to the response, such as `Set-Cookie`;
 - `{ redirect, headers? }`: a redirect for page requests. Data requests turn it into `401`;
 - `null`: `401`.

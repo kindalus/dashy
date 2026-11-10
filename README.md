@@ -163,7 +163,7 @@ Clicking a value whose column declares a parameter cross-filters the dashboard o
 
 Tables sort by any column and can add totals, nested subtotals and a Top N selector with an optional "Other" row, all driven by per-column aggregates. See [sorting, totals, subtotals and Top N](docs/contracts.md#sorting-totals-subtotals-and-top-n). Every dataset block downloads as CSV or Excel, exactly as shown; see [export](docs/contracts.md#export). Cartesian series can add reference lines, a linear trend and a client-side forecast; see [reference lines, trends and forecasts](docs/contracts.md#reference-lines-trends-and-forecasts). Metric cards can compare with another period, show progress towards a target and draw a sparkline; see [comparison, target and sparkline](docs/contracts.md#comparison-target-and-sparkline). The query row can also set a metric's tone, add a note and give a fallback text for missing values; see [tone, note and fallback](docs/contracts.md#tone-note-and-fallback). Charts save as PNG or SVG, and every dashboard prints or saves as PDF; see [images and printing](docs/contracts.md#images-and-printing).
 
-See [contracts and examples](docs/contracts.md), [source adapters](docs/sources.md), [authentication](docs/auth.md), [container deployment](docs/deployment.md), and [migration notes](docs/migration.md).
+See [contracts and examples](docs/contracts.md), [source adapters](docs/sources.md), [authentication](docs/auth.md), [embedding](docs/embedding.md), [container deployment](docs/deployment.md), and [migration notes](docs/migration.md).
 
 ## Layout
 
@@ -210,6 +210,18 @@ The included samples are public. A private project provides `authenticate(reques
 
 The optional `dashy/auth` module supplies the hook and `/auth/*` routes with signed session cookies, OpenID Connect (authorization code with PKCE) and API keys (`X-API-Key`, `Authorization: Bearer` or `?api_key=`, which becomes a session on pages). Roles come from a project function, for example by e-mail. See [authentication](docs/auth.md).
 
+## Embedding
+
+Other applications can show Dashy charts and dashboards with signed tokens that
+their server mints with an API key (`POST /api/embed`): a static SVG of a dataset
+chart (`/api/datasets/:name?_format=svg`, drawn on the server in the project's
+theme), and an interactive iframe of a dashboard or one dataset
+(`/embed/dashboards/:name`, `/embed/datasets/:name`) where viewers use only the
+mouse: tooltips, cross-filter and drill-down. Parameters fixed in a token never
+change; fix every parameter that must not change. Enable it with
+`embed: { secret, origins, maxTtlSeconds }`. See [embedding](docs/embedding.md);
+`bun scripts/embed-host.ts` runs a test host page against the Maven sample.
+
 ## Limits, cache and containers
 
 All requests share one DuckDB instance per process with configurable memory, threads, concurrency, queue and timeouts (`limits`). Excess requests queue and then receive 503 with `Retry-After`. An opt-in result cache (`cache: { ttlSeconds }`) shares identical query executions; `?refresh=true` bypasses it. `timezone` sets "today" for relative defaults and DuckDB's `current_date`.
@@ -220,7 +232,7 @@ Project files and SQL builders are trusted server code. HTTP parameters are untr
 
 ## API
 
-Built-in data endpoints are `GET` and share the project's authentication hook.
+Built-in data endpoints are `GET` (except `POST /api/embed`) and share the project's authentication hook.
 Custom routes under `/api/custom/` can declare additional methods:
 
 ```text
@@ -230,13 +242,16 @@ Custom routes under `/api/custom/` can declare additional methods:
 /api/dashboard-data/:dashboard/:request
 /api/dashboard-export/:dashboard/:block  ?_format=csv|xlsx &_sort= &_top=
 /api/metrics/:name
-/api/datasets/:name
+/api/datasets/:name             ?_format=json|svg &_width= &_height= &_theme= &_lang=
 /api/queries/:name
 /api/params/:name/options      ?_q= &_value= &_limit=
+/api/embed/shell                 embed token in X-Dashy-Embed
+/api/embed/data/:request
 /healthz
+POST /api/embed                  mint an embed token (API keys only)
 ```
 
-Ranges use `?period.from=2026-01-01&period.until=2026-06-30`. Arrays use repeated keys. Unknown parameters are rejected; `api_key`, `refresh`, `_from`, `_xf`, `_dd`, `_format`, `_sort` and `_top` are reserved for the engine. `refresh=true` bypasses the result cache. Cross-filter origins travel as `_xf=<block>:<param>` and drill-down paths as `_dd=<block>:<value>`. Responses are not cached by shared HTTP caches. Within one dashboard request, a query used by several blocks runs once.
+Ranges use `?period.from=2026-01-01&period.until=2026-06-30`. Arrays use repeated keys. Unknown parameters are rejected; `api_key`, `token`, `refresh`, `_from`, `_xf`, `_dd`, `_format`, `_sort`, `_top`, `_width`, `_height`, `_theme` and `_lang` are reserved for the engine. `refresh=true` bypasses the result cache. Cross-filter origins travel as `_xf=<block>:<param>` and drill-down paths as `_dd=<block>:<value>`. Responses are not cached by shared HTTP caches. Within one dashboard request, a query used by several blocks runs once.
 
 The initial page includes request IDs and their consuming block IDs. A
 `dashboard-data` request returns only that group's blocks and a timestamp; it
